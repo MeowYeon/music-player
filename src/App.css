@@ -551,11 +551,19 @@ button {
   white-space: nowrap;
 }
 
+.current-scan small,
 .current-scan em {
   display: block;
   margin-top: 8px;
-  color: #bd4e36;
   font-size: 12px;
+}
+
+.current-scan small {
+  color: #147c63;
+}
+
+.current-scan em {
+  color: #bd4e36;
   font-style: normal;
 }
 
@@ -574,7 +582,7 @@ button {
 
 .scan-item {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
+  grid-template-columns: 22px minmax(0, 1fr) 28px;
   gap: 10px;
   border-top: 1px solid #edf0eb;
   padding-top: 12px;
@@ -595,6 +603,7 @@ button {
 
 .scan-item strong,
 .scan-item span,
+.scan-item small,
 .scan-item em {
   display: block;
   overflow: hidden;
@@ -612,11 +621,38 @@ button {
   font-size: 12px;
 }
 
+.scan-item small {
+  margin-top: 5px;
+  color: #147c63;
+  font-size: 12px;
+}
+
 .scan-item em {
   margin-top: 5px;
   color: #bd4e36;
   font-size: 12px;
   font-style: normal;
+}
+
+.scan-item button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: #f0f3ef;
+  color: #66716e;
+}
+
+.scan-item button:hover:not(:disabled) {
+  background: #fff0eb;
+  color: #bd4e36;
+}
+
+.scan-item button:disabled {
+  cursor: default;
+  opacity: 0.38;
 }
 
 .player-bar {

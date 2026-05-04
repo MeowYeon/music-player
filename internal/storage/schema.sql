@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS scan_jobs (
   status TEXT NOT NULL CHECK (status IN ('waiting', 'running', 'completed', 'failed')),
   total_files INTEGER NOT NULL DEFAULT 0,
   scanned_files INTEGER NOT NULL DEFAULT 0,
+  message TEXT NOT NULL DEFAULT '',
   error_message TEXT NOT NULL DEFAULT '',
   started_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   finished_at TEXT,
@@ -42,4 +43,3 @@ CREATE INDEX IF NOT EXISTS idx_tracks_title ON tracks(title);
 CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist);
 CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album);
 CREATE INDEX IF NOT EXISTS idx_scan_jobs_started_at ON scan_jobs(started_at DESC);
-

@@ -46,6 +46,41 @@ func (s *Store) init(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("init schema: %w", err)
 	}
+	if err := s.ensureScanJobColumns(ctx); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Store) ensureScanJobColumns(ctx context.Context) error {
+	hasMessage := false
+	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(scan_jobs)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name, columnType string
+		var notNull int
+		var defaultValue any
+		var pk int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
+			return err
+		}
+		if name == "message" {
+			hasMessage = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if !hasMessage {
+		if _, err := s.db.ExecContext(ctx, `ALTER TABLE scan_jobs ADD COLUMN message TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -84,7 +119,7 @@ func (s *Store) CreateScanJob(ctx context.Context, rootID int64, path string) (S
 	row := s.db.QueryRowContext(ctx, `
 		INSERT INTO scan_jobs (root_id, path, status)
 		VALUES (?, ?, 'waiting')
-		RETURNING id, COALESCE(root_id, 0), path, status, total_files, scanned_files, error_message, started_at, COALESCE(finished_at, '')
+		RETURNING id, COALESCE(root_id, 0), path, status, total_files, scanned_files, message, error_message, started_at, COALESCE(finished_at, '')
 	`, rootID, path)
 	return scanScanJob(row)
 }
@@ -95,6 +130,7 @@ func (s *Store) MarkScanJobRunning(ctx context.Context, jobID int64, totalFiles 
 		SET status = 'running',
 		    total_files = ?,
 		    scanned_files = 0,
+		    message = '',
 		    error_message = ''
 		WHERE id = ?
 	`, totalFiles, jobID)
@@ -118,6 +154,19 @@ func (s *Store) MarkScanJobCompleted(ctx context.Context, jobID int64) error {
 		    finished_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 		WHERE id = ?
 	`, jobID)
+	return err
+}
+
+func (s *Store) MarkScanJobCompletedWithMessage(ctx context.Context, jobID int64, totalFiles int64, message string) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE scan_jobs
+		SET status = 'completed',
+		    total_files = ?,
+		    scanned_files = ?,
+		    message = ?,
+		    finished_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+		WHERE id = ?
+	`, totalFiles, totalFiles, message, jobID)
 	return err
 }
 
@@ -177,6 +226,18 @@ func (s *Store) ReplaceTracksForRoot(ctx context.Context, rootID int64, tracks [
 	return tx.Commit()
 }
 
+func (s *Store) CountTracksByRoot(ctx context.Context, rootID int64) (int64, error) {
+	var count int64
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM tracks WHERE root_id = ?`, rootID).Scan(&count)
+	return count, err
+}
+
+func (s *Store) CountUnknownDurationTracksByRoot(ctx context.Context, rootID int64) (int64, error) {
+	var count int64
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM tracks WHERE root_id = ? AND duration_ms = 0`, rootID).Scan(&count)
+	return count, err
+}
+
 func (s *Store) ListTracks(ctx context.Context, query string) ([]Track, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, root_id, path, title, artist, album, duration_ms, format, size_bytes, mtime_unix, created_at, updated_at
@@ -226,9 +287,46 @@ func (s *Store) GetTrackPath(ctx context.Context, id int64) (string, error) {
 	return path, err
 }
 
+func (s *Store) RemoveScanData(ctx context.Context, jobID int64) error {
+	var rootID int64
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(root_id, 0)
+		FROM scan_jobs
+		WHERE id = ?
+	`, jobID).Scan(&rootID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if rootID == 0 {
+		return nil
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	if _, err = tx.ExecContext(ctx, `DELETE FROM tracks WHERE root_id = ?`, rootID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM library_roots WHERE id = ?`, rootID); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
 func (s *Store) ListRecentScanJobs(ctx context.Context, limit int64) ([]ScanJob, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, COALESCE(root_id, 0), path, status, total_files, scanned_files, error_message, started_at, COALESCE(finished_at, '')
+		SELECT id, COALESCE(root_id, 0), path, status, total_files, scanned_files, message, error_message, started_at, COALESCE(finished_at, '')
 		FROM scan_jobs
 		ORDER BY started_at DESC
 		LIMIT ?
@@ -251,7 +349,7 @@ func (s *Store) ListRecentScanJobs(ctx context.Context, limit int64) ([]ScanJob,
 
 func (s *Store) CurrentScanJob(ctx context.Context) (*ScanJob, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, COALESCE(root_id, 0), path, status, total_files, scanned_files, error_message, started_at, COALESCE(finished_at, '')
+		SELECT id, COALESCE(root_id, 0), path, status, total_files, scanned_files, message, error_message, started_at, COALESCE(finished_at, '')
 		FROM scan_jobs
 		WHERE status IN ('waiting', 'running')
 		ORDER BY started_at DESC
@@ -303,6 +401,7 @@ func scanScanJob(row scanner) (ScanJob, error) {
 		&job.Status,
 		&job.TotalFiles,
 		&job.ScannedFiles,
+		&job.Message,
 		&job.ErrorMessage,
 		&job.StartedAt,
 		&job.FinishedAt,

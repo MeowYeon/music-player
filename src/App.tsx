@@ -13,12 +13,14 @@ import {
   Volume2,
   XCircle,
   X,
+  Trash2,
 } from 'lucide-react'
 import {
   getLibrarySummary,
   getScans,
   getTracks,
   getTrackStreamUrl,
+  removeScanData,
   startScan,
   type ScanJob,
   type Track,
@@ -65,6 +67,15 @@ function App() {
     },
   })
 
+  const removeScanDataMutation = useMutation({
+    mutationFn: removeScanData,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scans'] })
+      queryClient.invalidateQueries({ queryKey: ['library'] })
+      queryClient.invalidateQueries({ queryKey: ['tracks'] })
+    },
+  })
+
   const tracks = tracksQuery.data ?? []
   const currentScan = scansQuery.data?.current
   const recentScans = scansQuery.data?.recent ?? []
@@ -77,6 +88,7 @@ function App() {
   const canUseNext = tracks.length > 0 && currentIndex >= 0 && currentIndex < tracks.length - 1
   const playerDuration = duration || (currentTrack?.durationMs ? currentTrack.durationMs / 1000 : 0)
   const isPlaying = playbackStatus === 'playing'
+  const showPauseButton = playbackStatus === 'loading' || playbackStatus === 'playing'
 
   useEffect(() => {
     if (latestScanStatus === 'completed' || latestScanStatus === 'failed') {
@@ -106,6 +118,9 @@ function App() {
   }
 
   function handleSelectTrack(track: Track) {
+    if (currentTrack?.id === track.id && (playbackStatus === 'loading' || playbackStatus === 'playing')) {
+      return
+    }
     playTrack(track)
   }
 
@@ -159,6 +174,15 @@ function App() {
     if (canUseNext) {
       playTrack(tracks[currentIndex + 1])
     }
+  }
+
+  function handleRemoveScanData(scan: ScanJob) {
+    const confirmed = window.confirm(`确定剔除这个扫描目录的数据吗？\\n\\n${scan.path}\\n\\n这只会删除媒体库索引，不会删除本地音乐文件。`)
+    if (!confirmed) {
+      return
+    }
+
+    removeScanDataMutation.mutate(scan.id)
   }
 
   function handleSeek(value: number) {
@@ -330,7 +354,12 @@ function App() {
 
               <div className="scan-list">
                 {recentScans.map((scan) => (
-                  <ScanItem key={scan.id} scan={scan} />
+                  <ScanItem
+                    key={scan.id}
+                    scan={scan}
+                    onRemove={handleRemoveScanData}
+                    isRemoving={removeScanDataMutation.isPending}
+                  />
                 ))}
               </div>
             </section>
@@ -345,7 +374,7 @@ function App() {
           </div>
           <div>
             <strong>{currentTrack?.title ?? '未选择歌曲'}</strong>
-            <span>{currentTrack?.artist ?? '选择歌曲后开始播放'}</span>
+            <span>{currentTrack ? displayArtist(currentTrack) : '选择歌曲后开始播放'}</span>
           </div>
         </div>
 
@@ -353,8 +382,8 @@ function App() {
           <button type="button" aria-label="上一首" disabled={!canUsePrevious} onClick={handlePreviousTrack} title="上一首">
             <SkipBack size={19} />
           </button>
-          <button className="play-button" type="button" aria-label={isPlaying ? '暂停' : '播放'} onClick={handleTogglePlayback} title={isPlaying ? '暂停' : '播放'}>
-            {isPlaying ? <Pause size={22} fill="currentColor" /> : <Play size={22} fill="currentColor" />}
+          <button className="play-button" type="button" aria-label={showPauseButton ? '暂停' : '播放'} onClick={handleTogglePlayback} title={showPauseButton ? '暂停' : '播放'}>
+            {showPauseButton ? <Pause size={22} fill="currentColor" /> : <Play size={22} fill="currentColor" />}
           </button>
           <button type="button" aria-label="下一首" disabled={!canUseNext} onClick={handleNextTrack} title="下一首">
             <SkipForward size={19} />
@@ -435,13 +464,23 @@ function ScanProgress({ scan, title }: { scan: ScanJob; title: string }) {
         <span style={{ width: `${progress}%` }} />
       </div>
       <p>{scan.path}</p>
+      {scan.message && <small>{scan.message}</small>}
       {scan.errorMessage && <em>{scan.errorMessage}</em>}
     </section>
   )
 }
 
-function ScanItem({ scan }: { scan: ScanJob }) {
+function ScanItem({
+  scan,
+  onRemove,
+  isRemoving,
+}: {
+  scan: ScanJob
+  onRemove: (scan: ScanJob) => void
+  isRemoving: boolean
+}) {
   const Icon = scan.status === 'completed' ? CheckCircle2 : scan.status === 'failed' ? XCircle : Clock3
+  const canRemove = scan.status !== 'running' && scan.status !== 'waiting'
 
   return (
     <article className="scan-item">
@@ -451,8 +490,18 @@ function ScanItem({ scan }: { scan: ScanJob }) {
         <span>
           {statusLabel(scan.status)} · {scan.scannedFiles}/{scan.totalFiles} · {scan.startedAt}
         </span>
+        {scan.message && <small>{scan.message}</small>}
         {scan.errorMessage && <em>{scan.errorMessage}</em>}
       </div>
+      <button
+        type="button"
+        aria-label="剔除该目录数据"
+        title="剔除该目录数据"
+        disabled={!canRemove || isRemoving}
+        onClick={() => onRemove(scan)}
+      >
+        <Trash2 size={15} />
+      </button>
     </article>
   )
 }

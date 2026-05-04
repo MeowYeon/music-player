@@ -20,6 +20,7 @@ export type ScanJob = {
   status: 'waiting' | 'running' | 'completed' | 'failed'
   totalFiles: number
   scannedFiles: number
+  message?: string
   errorMessage?: string
   startedAt: string
   finishedAt?: string
@@ -140,6 +141,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(message)
   }
 
+  if (response.status === 204) {
+    return undefined as T
+  }
+
   return response.json() as Promise<T>
 }
 
@@ -186,6 +191,16 @@ export async function startScan(payload: StartScanRequest): Promise<ScanJob> {
       startedAt: '刚刚',
     },
   )
+}
+
+export async function removeScanData(scanId: number): Promise<void> {
+  if (useMocks) {
+    return
+  }
+
+  await request<void>(`/api/scans/${scanId}/data`, {
+    method: 'DELETE',
+  })
 }
 
 export function getTrackStreamUrl(trackId: number): string {

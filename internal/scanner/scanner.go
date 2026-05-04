@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"ayan/internal/metadata"
 	"ayan/internal/storage"
@@ -17,8 +18,11 @@ type Store interface {
 	CreateScanJob(ctx context.Context, rootID int64, path string) (storage.ScanJob, error)
 	MarkScanJobRunning(ctx context.Context, jobID int64, totalFiles int64) error
 	UpdateScanJobProgress(ctx context.Context, jobID int64, scannedFiles int64) error
+	CountTracksByRoot(ctx context.Context, rootID int64) (int64, error)
+	CountUnknownDurationTracksByRoot(ctx context.Context, rootID int64) (int64, error)
 	ReplaceTracksForRoot(ctx context.Context, rootID int64, tracks []storage.TrackInput) error
 	MarkScanJobCompleted(ctx context.Context, jobID int64) error
+	MarkScanJobCompletedWithMessage(ctx context.Context, jobID int64, totalFiles int64, message string) error
 	MarkScanJobFailed(ctx context.Context, jobID int64, message string) error
 	TouchLibraryRootScannedAt(ctx context.Context, id int64) error
 }
@@ -57,9 +61,21 @@ func (s *Service) Start(ctx context.Context, path string) (storage.ScanJob, erro
 }
 
 func (s *Service) run(ctx context.Context, root storage.LibraryRoot, job storage.ScanJob) {
-	files, err := collectAudioFiles(root.Path)
+	files, newestModTime, err := collectAudioFiles(root.Path)
 	if err != nil {
 		s.fail(ctx, job.ID, err)
+		return
+	}
+
+	unchanged, err := s.isUnchanged(ctx, root, int64(len(files)), newestModTime)
+	if err != nil {
+		s.fail(ctx, job.ID, err)
+		return
+	}
+	if unchanged {
+		if err := s.store.MarkScanJobCompletedWithMessage(ctx, job.ID, int64(len(files)), "源数据目录没有变动"); err != nil {
+			s.fail(ctx, job.ID, err)
+		}
 		return
 	}
 
@@ -131,8 +147,39 @@ func validateDirectory(path string) (string, error) {
 	return cleanPath, nil
 }
 
-func collectAudioFiles(root string) ([]string, error) {
+func (s *Service) isUnchanged(ctx context.Context, root storage.LibraryRoot, fileCount int64, newestModTime time.Time) (bool, error) {
+	if root.LastScannedAt == "" {
+		return false, nil
+	}
+
+	lastScannedAt, err := time.Parse(time.RFC3339Nano, root.LastScannedAt)
+	if err != nil {
+		return false, nil
+	}
+
+	trackCount, err := s.store.CountTracksByRoot(ctx, root.ID)
+	if err != nil {
+		return false, err
+	}
+	if trackCount != fileCount {
+		return false, nil
+	}
+	unknownDurations, err := s.store.CountUnknownDurationTracksByRoot(ctx, root.ID)
+	if err != nil {
+		return false, err
+	}
+	if unknownDurations > 0 {
+		return false, nil
+	}
+	if newestModTime.IsZero() {
+		return true, nil
+	}
+	return !newestModTime.After(lastScannedAt), nil
+}
+
+func collectAudioFiles(root string) ([]string, time.Time, error) {
 	var files []string
+	var newestModTime time.Time
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return nil
@@ -151,10 +198,13 @@ func collectAudioFiles(root string) ([]string, error) {
 
 		if _, ok := SupportedExtensions[strings.ToLower(filepath.Ext(entry.Name()))]; ok {
 			files = append(files, path)
+			if info, err := entry.Info(); err == nil && info.ModTime().After(newestModTime) {
+				newestModTime = info.ModTime()
+			}
 		}
 		return nil
 	})
-	return files, err
+	return files, newestModTime, err
 }
 
 func buildTrack(rootID int64, path string) (storage.TrackInput, error) {
@@ -165,7 +215,7 @@ func buildTrack(rootID int64, path string) (storage.TrackInput, error) {
 
 	meta, err := metadata.Read(path)
 	if err != nil {
-		meta = metadata.TrackMetadata{}
+		slog.Debug("metadata fallback", "path", path, "error", err)
 	}
 
 	title := strings.TrimSpace(meta.Title)

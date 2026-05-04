@@ -77,6 +77,7 @@ UPDATE scan_jobs
 SET status = 'running',
     total_files = ?,
     scanned_files = 0,
+    message = '',
     error_message = ''
 WHERE id = ?;
 
@@ -100,10 +101,18 @@ SET status = 'failed',
 WHERE id = ?;
 
 -- name: ListRecentScanJobs
-SELECT id, root_id, path, status, total_files, scanned_files, error_message, started_at, finished_at
+SELECT id, root_id, path, status, total_files, scanned_files, message, error_message, started_at, finished_at
 FROM scan_jobs
 ORDER BY started_at DESC
 LIMIT ?;
+
+-- name: RemoveScanData
+DELETE FROM tracks
+WHERE root_id = (
+  SELECT root_id
+  FROM scan_jobs
+  WHERE id = ?
+);
 
 -- Library summary
 
@@ -112,4 +121,3 @@ SELECT
   (SELECT COUNT(*) FROM library_roots) AS root_count,
   (SELECT COUNT(*) FROM tracks) AS track_count,
   (SELECT status FROM scan_jobs ORDER BY started_at DESC LIMIT 1) AS latest_scan_status;
-

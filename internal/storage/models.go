@@ -29,6 +29,7 @@ type ScanJob struct {
 	Status       string
 	TotalFiles   int64
 	ScannedFiles int64
+	Message      string
 	ErrorMessage string
 	StartedAt    string
 	FinishedAt   string
