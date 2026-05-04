@@ -4,7 +4,6 @@ import {
   AudioLines,
   CheckCircle2,
   Clock3,
-  FolderSearch,
   ListMusic,
   Pause,
   Play,
@@ -134,10 +133,6 @@ function App() {
           <button className="nav-item active" type="button" aria-label="歌曲">
             <ListMusic size={20} />
             <span>歌曲</span>
-          </button>
-          <button className="nav-item" type="button" aria-label="扫描任务">
-            <FolderSearch size={20} />
-            <span>扫描任务</span>
           </button>
         </nav>
       </aside>
