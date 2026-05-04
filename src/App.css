@@ -114,6 +114,32 @@ button {
   font-size: 14px;
 }
 
+.connection-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 12px;
+  color: #147c63;
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.connection-dot::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #20a783;
+  content: "";
+}
+
+.connection-dot.offline {
+  color: #bd4e36;
+}
+
+.connection-dot.offline::before {
+  background: #d76348;
+}
+
 .search-box {
   display: flex;
   width: min(420px, 42vw);
@@ -133,6 +159,18 @@ button {
   outline: 0;
   background: transparent;
   color: #26312f;
+}
+
+.search-box button {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: #edf2ee;
+  color: #66716e;
 }
 
 .content-grid {
@@ -177,6 +215,18 @@ button {
 .now-summary p {
   margin: 8px 0 0;
   color: #6a7470;
+}
+
+.inline-error,
+.form-error {
+  display: block;
+  color: #bd4e36;
+  font-size: 12px;
+  font-style: normal;
+}
+
+.inline-error {
+  margin-top: 8px;
 }
 
 .passive-wave {
@@ -230,6 +280,12 @@ button {
   background: rgba(255, 255, 255, 0.78);
 }
 
+.table-scroll {
+  max-height: calc(100vh - 360px);
+  min-height: 240px;
+  overflow: auto;
+}
+
 .table-header,
 .section-title,
 .panel-heading,
@@ -262,6 +318,10 @@ button {
 }
 
 .track-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(255, 255, 255, 0.96);
   color: #79837e;
   font-size: 12px;
   font-weight: 680;
@@ -289,6 +349,27 @@ button {
   color: #113f35;
 }
 
+.track-table tbody tr.selected.playing .track-title::after {
+  color: #147c63;
+  content: "  播放中";
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.track-table tbody tr.selected.loading .track-title::after {
+  color: #d49a38;
+  content: "  加载中";
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.track-table tbody tr.selected.paused .track-title::after {
+  color: #66716e;
+  content: "  已暂停";
+  font-size: 12px;
+  font-weight: 720;
+}
+
 .track-title {
   border: 0;
   background: transparent;
@@ -296,6 +377,10 @@ button {
   font-weight: 700;
   padding: 0;
   text-align: left;
+}
+
+.muted-cell {
+  color: #8a9590;
 }
 
 .format-chip,
@@ -327,6 +412,11 @@ button {
 .empty-state p {
   margin: 0;
   color: #6b7471;
+}
+
+.empty-state.error h3,
+.empty-state.error p {
+  color: #bd4e36;
 }
 
 .scan-panel {
@@ -411,12 +501,24 @@ button {
   opacity: 0.72;
 }
 
+.form-error {
+  margin: 0;
+}
+
 .current-scan {
   margin-top: 20px;
   border: 1px solid #dce9e2;
   border-radius: 8px;
   background: #f7fcfa;
   padding: 14px;
+}
+
+.current-scan-title {
+  display: block;
+  margin-bottom: 10px;
+  color: #65716c;
+  font-size: 12px;
+  font-weight: 720;
 }
 
 .scan-progress-meta span {
@@ -449,6 +551,14 @@ button {
   white-space: nowrap;
 }
 
+.current-scan em {
+  display: block;
+  margin-top: 8px;
+  color: #bd4e36;
+  font-size: 12px;
+  font-style: normal;
+}
+
 .recent-scans {
   margin-top: 22px;
 }
@@ -456,7 +566,10 @@ button {
 .scan-list {
   display: grid;
   gap: 10px;
+  max-height: 300px;
   margin-top: 12px;
+  overflow: auto;
+  padding-right: 4px;
 }
 
 .scan-item {
@@ -570,6 +683,12 @@ button {
   border-radius: 8px;
   background: #edf2ee;
   color: #3d4945;
+}
+
+.player-controls button:disabled,
+.player-progress input:disabled {
+  cursor: default;
+  opacity: 0.42;
 }
 
 .player-controls .play-button {

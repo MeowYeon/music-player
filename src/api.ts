@@ -128,7 +128,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   })
 
   if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`)
+    let message = `Request failed: ${response.status}`
+    try {
+      const payload = (await response.json()) as { error?: string }
+      if (payload.error) {
+        message = payload.error
+      }
+    } catch {
+      // Keep the status-based fallback when the response is not JSON.
+    }
+    throw new Error(message)
   }
 
   return response.json() as Promise<T>
