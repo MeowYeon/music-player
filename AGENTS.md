@@ -4,8 +4,7 @@
 
 - Work in Debian WSL by default.
 - Preferred command shape:
-  `wsl -d Debian --cd /home/ghp/space/ai/music-backend <command>`
-- This worktree is for backend development on branch `backend`.
+  `wsl -d Debian --cd /home/ghp/space/ai/music <command>`
 
 ## Project
 
@@ -17,5 +16,9 @@
 ## Git
 
 - Keep changes small and commit each complete functional unit.
-- Do not modify unrelated frontend worktree files from this backend worktree.
 
+## Dev services
+
+- Start services with `npm run services:start`.
+- Stop services with `npm run services:stop`.
+- Check services with `npm run services:status`.

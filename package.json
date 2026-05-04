@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "services:start": "bash scripts/dev-start.sh",
+    "services:stop": "bash scripts/dev-stop.sh",
+    "services:status": "bash scripts/dev-status.sh",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1"
   },
