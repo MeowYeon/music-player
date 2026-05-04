@@ -55,7 +55,10 @@ function App() {
   const scansQuery = useQuery({
     queryKey: ['scans'],
     queryFn: getScans,
-    refetchInterval: (query) => (query.state.data?.current?.status === 'running' ? 1200 : false),
+    refetchInterval: (query) => {
+      const status = query.state.data?.current?.status
+      return status === 'waiting' || status === 'running' ? 1200 : false
+    },
   })
 
   const scanMutation = useMutation({
