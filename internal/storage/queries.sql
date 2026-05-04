@@ -106,13 +106,17 @@ FROM scan_jobs
 ORDER BY started_at DESC
 LIMIT ?;
 
--- name: RemoveScanData
+-- name: DeleteScanJobTracks
 DELETE FROM tracks
-WHERE root_id = (
-  SELECT root_id
-  FROM scan_jobs
-  WHERE id = ?
-);
+WHERE root_id = ?;
+
+-- name: DeleteScanJobRoot
+DELETE FROM library_roots
+WHERE id = ?;
+
+-- name: DeleteScanJob
+DELETE FROM scan_jobs
+WHERE id = ?;
 
 -- Library summary
 

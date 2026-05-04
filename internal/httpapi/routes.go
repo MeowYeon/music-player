@@ -24,7 +24,7 @@ type Storage interface {
 	ListRecentScanJobs(ctx context.Context, limit int64) ([]storage.ScanJob, error)
 	ListTracks(ctx context.Context, query string) ([]storage.Track, error)
 	GetTrackPath(ctx context.Context, id int64) (string, error)
-	RemoveScanData(ctx context.Context, jobID int64) error
+	DeleteScanJob(ctx context.Context, jobID int64) error
 }
 
 type Scanner interface {
@@ -44,7 +44,7 @@ func (s *Server) Routes() http.Handler {
 	r.Get("/api/library", s.handleLibrary)
 	r.Post("/api/scan", s.handleStartScan)
 	r.Get("/api/scans", s.handleScans)
-	r.Delete("/api/scans/{id}/data", s.handleRemoveScanData)
+	r.Delete("/api/scans/{id}", s.handleDeleteScanJob)
 	r.Get("/api/tracks", s.handleTracks)
 	r.Get("/api/tracks/{id}/stream", s.handleTrackStream)
 	return r
@@ -111,15 +111,18 @@ func (s *Server) handleScans(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, response)
 }
 
-func (s *Server) handleRemoveScanData(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleDeleteScanJob(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 
-	if err := s.storage.RemoveScanData(r.Context(), id); errors.Is(err, storage.ErrNotFound) {
+	if err := s.storage.DeleteScanJob(r.Context(), id); errors.Is(err, storage.ErrNotFound) {
 		writeError(w, http.StatusNotFound, err)
+		return
+	} else if errors.Is(err, storage.ErrInvalidOperation) {
+		writeError(w, http.StatusConflict, errors.New("cannot delete a waiting or running scan job"))
 		return
 	} else if err != nil {
 		writeError(w, http.StatusInternalServerError, err)

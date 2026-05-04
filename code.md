@@ -67,10 +67,12 @@ GET    /api/health
 GET    /api/library
 POST   /api/scan
 GET    /api/scans
-DELETE /api/scans/{id}/data
+DELETE /api/scans/{id}
 GET    /api/tracks?q=
 GET    /api/tracks/{id}/stream
 ```
+
+`DELETE /api/scans/{id}` 会删除对应扫描任务记录，并清理该任务目录下的媒体库索引；它不会删除本地音乐文件。
 
 ## 前端
 

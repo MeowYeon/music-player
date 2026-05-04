@@ -193,12 +193,12 @@ export async function startScan(payload: StartScanRequest): Promise<ScanJob> {
   )
 }
 
-export async function removeScanData(scanId: number): Promise<void> {
+export async function deleteScanJob(scanId: number): Promise<void> {
   if (useMocks) {
     return
   }
 
-  await request<void>(`/api/scans/${scanId}/data`, {
+  await request<void>(`/api/scans/${scanId}`, {
     method: 'DELETE',
   })
 }

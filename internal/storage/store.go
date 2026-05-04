@@ -287,21 +287,22 @@ func (s *Store) GetTrackPath(ctx context.Context, id int64) (string, error) {
 	return path, err
 }
 
-func (s *Store) RemoveScanData(ctx context.Context, jobID int64) error {
+func (s *Store) DeleteScanJob(ctx context.Context, jobID int64) error {
 	var rootID int64
+	var status string
 	err := s.db.QueryRowContext(ctx, `
-		SELECT COALESCE(root_id, 0)
+		SELECT COALESCE(root_id, 0), status
 		FROM scan_jobs
 		WHERE id = ?
-	`, jobID).Scan(&rootID)
+	`, jobID).Scan(&rootID, &status)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
 	}
 	if err != nil {
 		return err
 	}
-	if rootID == 0 {
-		return nil
+	if status == "waiting" || status == "running" {
+		return ErrInvalidOperation
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -314,10 +315,15 @@ func (s *Store) RemoveScanData(ctx context.Context, jobID int64) error {
 		}
 	}()
 
-	if _, err = tx.ExecContext(ctx, `DELETE FROM tracks WHERE root_id = ?`, rootID); err != nil {
-		return err
+	if rootID != 0 {
+		if _, err = tx.ExecContext(ctx, `DELETE FROM tracks WHERE root_id = ?`, rootID); err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, `DELETE FROM library_roots WHERE id = ?`, rootID); err != nil {
+			return err
+		}
 	}
-	if _, err = tx.ExecContext(ctx, `DELETE FROM library_roots WHERE id = ?`, rootID); err != nil {
+	if _, err = tx.ExecContext(ctx, `DELETE FROM scan_jobs WHERE id = ?`, jobID); err != nil {
 		return err
 	}
 
@@ -381,6 +387,7 @@ func (s *Store) GetLibrarySummary(ctx context.Context) (LibrarySummary, error) {
 }
 
 var ErrNotFound = errors.New("not found")
+var ErrInvalidOperation = errors.New("invalid operation")
 
 type scanner interface {
 	Scan(dest ...any) error

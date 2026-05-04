@@ -20,7 +20,7 @@ import {
   getScans,
   getTracks,
   getTrackStreamUrl,
-  removeScanData,
+  deleteScanJob,
   startScan,
   type ScanJob,
   type Track,
@@ -67,8 +67,8 @@ function App() {
     },
   })
 
-  const removeScanDataMutation = useMutation({
-    mutationFn: removeScanData,
+  const deleteScanJobMutation = useMutation({
+    mutationFn: deleteScanJob,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['scans'] })
       queryClient.invalidateQueries({ queryKey: ['library'] })
@@ -176,13 +176,13 @@ function App() {
     }
   }
 
-  function handleRemoveScanData(scan: ScanJob) {
-    const confirmed = window.confirm(`确定剔除这个扫描目录的数据吗？\\n\\n${scan.path}\\n\\n这只会删除媒体库索引，不会删除本地音乐文件。`)
+  function handleDeleteScanJob(scan: ScanJob) {
+    const confirmed = window.confirm(`确定删除这个扫描任务吗？\n\n${scan.path}\n\n这会删除该任务记录，并清理对应目录的媒体库索引；不会删除本地音乐文件。`)
     if (!confirmed) {
       return
     }
 
-    removeScanDataMutation.mutate(scan.id)
+    deleteScanJobMutation.mutate(scan.id)
   }
 
   function handleSeek(value: number) {
@@ -357,8 +357,8 @@ function App() {
                   <ScanItem
                     key={scan.id}
                     scan={scan}
-                    onRemove={handleRemoveScanData}
-                    isRemoving={removeScanDataMutation.isPending}
+                    onDelete={handleDeleteScanJob}
+                    isDeleting={deleteScanJobMutation.isPending}
                   />
                 ))}
               </div>
@@ -472,15 +472,15 @@ function ScanProgress({ scan, title }: { scan: ScanJob; title: string }) {
 
 function ScanItem({
   scan,
-  onRemove,
-  isRemoving,
+  onDelete,
+  isDeleting,
 }: {
   scan: ScanJob
-  onRemove: (scan: ScanJob) => void
-  isRemoving: boolean
+  onDelete: (scan: ScanJob) => void
+  isDeleting: boolean
 }) {
   const Icon = scan.status === 'completed' ? CheckCircle2 : scan.status === 'failed' ? XCircle : Clock3
-  const canRemove = scan.status !== 'running' && scan.status !== 'waiting'
+  const canDelete = scan.status !== 'running' && scan.status !== 'waiting'
 
   return (
     <article className="scan-item">
@@ -495,10 +495,10 @@ function ScanItem({
       </div>
       <button
         type="button"
-        aria-label="剔除该目录数据"
-        title="剔除该目录数据"
-        disabled={!canRemove || isRemoving}
-        onClick={() => onRemove(scan)}
+        aria-label="删除扫描任务"
+        title="删除扫描任务"
+        disabled={!canDelete || isDeleting}
+        onClick={() => onDelete(scan)}
       >
         <Trash2 size={15} />
       </button>
