@@ -1,12 +1,10 @@
 package storage
 
-import "time"
-
 type LibraryRoot struct {
 	ID            int64
 	Path          string
-	CreatedAt     time.Time
-	LastScannedAt time.Time
+	CreatedAt     string
+	LastScannedAt string
 }
 
 type Track struct {
@@ -20,8 +18,8 @@ type Track struct {
 	Format     string
 	SizeBytes  int64
 	MTimeUnix  int64
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	CreatedAt  string
+	UpdatedAt  string
 }
 
 type ScanJob struct {
@@ -32,7 +30,24 @@ type ScanJob struct {
 	TotalFiles   int64
 	ScannedFiles int64
 	ErrorMessage string
-	StartedAt    time.Time
-	FinishedAt   time.Time
+	StartedAt    string
+	FinishedAt   string
 }
 
+type TrackInput struct {
+	RootID     int64
+	Path       string
+	Title      string
+	Artist     string
+	Album      string
+	DurationMS int64
+	Format     string
+	SizeBytes  int64
+	MTimeUnix  int64
+}
+
+type LibrarySummary struct {
+	RootCount        int64
+	TrackCount       int64
+	LatestScanStatus string
+}

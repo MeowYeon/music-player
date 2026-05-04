@@ -15,57 +15,57 @@
 
 ## 2. 后端可用链路
 
-- [ ] `cmd/server/main.go` 读取 `config.yaml`。
-- [ ] 创建 `data/` 目录。
-- [ ] 打开 SQLite 数据库。
-- [ ] 执行 `internal/storage/schema.sql` 初始化表。
-- [ ] 初始化 storage、scanner、httpapi。
-- [ ] 使用 `chi` 注册 API。
-- [ ] 监听 `127.0.0.1:8080`。
+- [x] `cmd/server/main.go` 读取 `config.yaml`。
+- [x] 创建 `data/` 目录。
+- [x] 打开 SQLite 数据库。
+- [x] 执行 `internal/storage/schema.sql` 初始化表。
+- [x] 初始化 storage、scanner、httpapi。
+- [x] 使用 `chi` 注册 API。
+- [x] 监听 `127.0.0.1:8080`。
 
 ## 3. Storage
 
-- [ ] 实现 `Store` 类型，封装 `*sql.DB`。
-- [ ] 实现 library root 创建或复用。
-- [ ] 实现 scan job 创建、运行中、进度、完成、失败状态更新。
-- [ ] 实现按 `root_id` 删除 tracks。
-- [ ] 实现写入 track。
-- [ ] 实现歌曲列表查询和基础搜索。
-- [ ] 实现媒体库摘要查询。
-- [ ] 实现按 track id 查询播放路径。
+- [x] 实现 `Store` 类型，封装 `*sql.DB`。
+- [x] 实现 library root 创建或复用。
+- [x] 实现 scan job 创建、运行中、进度、完成、失败状态更新。
+- [x] 实现按 `root_id` 删除 tracks。
+- [x] 实现写入 track。
+- [x] 实现歌曲列表查询和基础搜索。
+- [x] 实现媒体库摘要查询。
+- [x] 实现按 track id 查询播放路径。
 
 ## 4. Scanner
 
-- [ ] `POST /api/scan` 校验目录存在且可读。
-- [ ] 创建或复用 `library_roots`。
-- [ ] 创建 `scan_jobs` 后后台执行扫描。
-- [ ] 递归扫描目录。
-- [ ] 默认忽略隐藏文件和隐藏目录。
-- [ ] 支持 `.mp3`、`.flac`、`.m4a`、`.aac`、`.ogg`、`.wav`。
-- [ ] 使用 `github.com/dhowden/tag` 解析标题、艺术家、专辑。
-- [ ] 元数据缺失或解析失败时，用文件名作为标题。
-- [ ] `duration_ms` 第一版 best-effort，无法解析时保存 `0`。
-- [ ] 单个文件解析失败不让整个任务失败。
-- [ ] 目录不可读或数据库写入失败时标记任务失败。
+- [x] `POST /api/scan` 校验目录存在且可读。
+- [x] 创建或复用 `library_roots`。
+- [x] 创建 `scan_jobs` 后后台执行扫描。
+- [x] 递归扫描目录。
+- [x] 默认忽略隐藏文件和隐藏目录。
+- [x] 支持 `.mp3`、`.flac`、`.m4a`、`.aac`、`.ogg`、`.wav`。
+- [x] 使用 `github.com/dhowden/tag` 解析标题、艺术家、专辑。
+- [x] 元数据缺失或解析失败时，用文件名作为标题。
+- [x] `duration_ms` 第一版 best-effort，无法解析时保存 `0`。
+- [x] 单个文件解析失败不让整个任务失败。
+- [x] 目录不可读或数据库写入失败时标记任务失败。
 
 ## 5. HTTP API
 
-- [ ] `GET /api/health`
-- [ ] `GET /api/library`
-- [ ] `POST /api/scan`
-- [ ] `GET /api/scans`
-- [ ] `GET /api/tracks?q=`
-- [ ] `GET /api/tracks/{id}/stream`
-- [ ] stream 接口使用 `http.ServeContent` 支持 Range。
+- [x] `GET /api/health`
+- [x] `GET /api/library`
+- [x] `POST /api/scan`
+- [x] `GET /api/scans`
+- [x] `GET /api/tracks?q=`
+- [x] `GET /api/tracks/{id}/stream`
+- [x] stream 接口使用 `http.ServeContent` 支持 Range。
 
 ## 6. 前端接入
 
-- [ ] 默认扫描路径改为 `/mnt/c/Users/guohp/Music/test`。
-- [ ] 默认关闭 mock，开发期通过 Vite proxy 请求真实后端。
-- [ ] 保留 mock 能力，但只在显式设置 `VITE_USE_MOCKS=true` 时启用。
-- [ ] 扫描中轮询扫描状态。
-- [ ] 扫描完成后刷新 library 和 tracks。
-- [ ] 播放继续使用 `getTrackStreamUrl(track.id)`。
+- [x] 默认扫描路径改为 `/mnt/c/Users/guohp/Music/test`。
+- [x] 默认关闭 mock，开发期通过 Vite proxy 请求真实后端。
+- [x] 保留 mock 能力，但只在显式设置 `VITE_USE_MOCKS=true` 时启用。
+- [x] 扫描中轮询扫描状态。
+- [x] 扫描完成后刷新 library 和 tracks。
+- [x] 播放继续使用 `getTrackStreamUrl(track.id)`。
 
 ## 7. 验证
 
@@ -73,13 +73,13 @@
 - [x] `npm ci`
 - [x] `npm run build`
 - [x] `go test ./...`
-- [ ] 启动 `go run ./cmd/server`。
-- [ ] `GET /api/health` 返回 ok。
-- [ ] `POST /api/scan` with `{ "path": "/mnt/c/Users/guohp/Music/test" }` 返回 scan job。
-- [ ] 轮询 `GET /api/scans` 直到 completed。
-- [ ] `GET /api/library` 返回至少 `1` 个目录、`3` 首歌曲。
-- [ ] `GET /api/tracks` 返回测试目录中的 3 个 mp3。
-- [ ] `GET /api/tracks/{id}/stream` 返回音频内容，Range 请求返回 `206`。
+- [x] 启动 `go run ./cmd/server`。
+- [x] `GET /api/health` 返回 ok。
+- [x] `POST /api/scan` with `{ "path": "/mnt/c/Users/guohp/Music/test" }` 返回 scan job。
+- [x] 轮询 `GET /api/scans` 直到 completed。
+- [x] `GET /api/library` 返回至少 `1` 个目录、`3` 首歌曲。
+- [x] `GET /api/tracks` 返回测试目录中的 3 个 mp3。
+- [x] `GET /api/tracks/{id}/stream` 返回音频内容，Range 请求返回 `206`。
 - [ ] 打开 `http://127.0.0.1:5173` 后可扫描并播放。
 
 ## Assumptions

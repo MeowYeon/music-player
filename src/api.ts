@@ -35,7 +35,7 @@ export type StartScanRequest = {
 }
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
-const useMocks = import.meta.env.VITE_USE_MOCKS !== 'false'
+const useMocks = import.meta.env.VITE_USE_MOCKS === 'true'
 
 const mockTracks: Track[] = [
   {

@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useRef, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AudioLines,
@@ -24,7 +24,7 @@ import {
   type Track,
 } from './api'
 
-const defaultScanPath = '/home/ghp/Music'
+const defaultScanPath = '/mnt/c/Users/guohp/Music/test'
 
 function App() {
   const queryClient = useQueryClient()
@@ -63,6 +63,14 @@ function App() {
   const tracks = tracksQuery.data ?? []
   const currentScan = scansQuery.data?.current
   const recentScans = scansQuery.data?.recent ?? []
+  const latestScanStatus = currentScan?.status ?? recentScans[0]?.status
+
+  useEffect(() => {
+    if (latestScanStatus === 'completed' || latestScanStatus === 'failed') {
+      queryClient.invalidateQueries({ queryKey: ['library'] })
+      queryClient.invalidateQueries({ queryKey: ['tracks'] })
+    }
+  }, [latestScanStatus, queryClient])
 
   const librarySummary = useMemo(() => {
     const rootCount = libraryQuery.data?.rootCount ?? 0
