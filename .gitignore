@@ -1,6 +1,7 @@
 node_modules
 dist
 .vite
+.tools
 *.local
 *.tsbuildinfo
 vite.config.js
