@@ -1,6 +1,9 @@
 node_modules
 dist
 .vite
+web/node_modules
+web/dist
+web/.vite
 .tools
 .run
 data

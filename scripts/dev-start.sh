@@ -67,7 +67,7 @@ elif is_pid_running "$FRONTEND_PID_FILE"; then
   echo "Frontend already running with pid $(cat "$FRONTEND_PID_FILE")."
 else
   echo "Starting frontend..."
-  setsid npm run dev -- --host 127.0.0.1 --port 5173 --strictPort >"$LOG_DIR/frontend.log" 2>&1 &
+  setsid npm --prefix web run dev -- --host 127.0.0.1 --port 5173 --strictPort >"$LOG_DIR/frontend.log" 2>&1 &
   echo "$!" >"$FRONTEND_PID_FILE"
 fi
 wait_for_url "$FRONTEND_URL" "Frontend"

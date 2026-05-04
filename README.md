@@ -2,6 +2,15 @@
 
 本地音乐播放器 MVP。
 
+## 代码结构
+
+- 后端：`cmd/`、`internal/`
+- 前端：`web/`
+- 启停脚本：`scripts/`
+- 设计资料：`design/`
+
+更多说明见 [code.md](./code.md)。
+
 ## 开发服务
 
 从 Debian WSL 的项目目录运行：
