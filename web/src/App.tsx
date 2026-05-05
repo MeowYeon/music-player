@@ -4,120 +4,182 @@ import {
   AudioLines,
   CheckCircle2,
   Clock3,
+  FolderOpen,
   ListMusic,
   Pause,
   Play,
+  Plus,
+  RefreshCw,
   Search,
   SkipBack,
   SkipForward,
-  Volume2,
-  XCircle,
-  X,
   Trash2,
+  Volume2,
+  X,
+  XCircle,
 } from 'lucide-react'
 import {
+  createLibrary,
+  deleteLibrary,
+  getActiveScanTasks,
+  getLibraries,
   getLibrarySummary,
-  getScans,
   getTracks,
   getTrackStreamUrl,
-  deleteScanJob,
-  startScan,
-  type ScanJob,
+  scanLibrary,
+  type LibraryItem,
+  type ScanStatus,
+  type ScanTask,
   type Track,
 } from './api'
 
-const defaultScanPath = '/mnt/c/Users/guohp/Music/test'
+const defaultLibraryPath = '/mnt/c/Users/guohp/Music/test'
 type PlaybackStatus = 'idle' | 'loading' | 'playing' | 'paused' | 'ended' | 'error'
+type ViewMode = 'songs' | 'libraries'
 
 function App() {
   const queryClient = useQueryClient()
   const audioRef = useRef<HTMLAudioElement>(null)
+  const previousActiveCountRef = useRef(0)
+  const [view, setView] = useState<ViewMode>('songs')
   const [query, setQuery] = useState('')
-  const [scanPath, setScanPath] = useState(defaultScanPath)
+  const [libraryQueryText, setLibraryQueryText] = useState('')
+  const [libraryPath, setLibraryPath] = useState(defaultLibraryPath)
+  const [libraryFormError, setLibraryFormError] = useState('')
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null)
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus>('idle')
   const [playerError, setPlayerError] = useState('')
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [volume, setVolume] = useState(72)
-  const [scanFormError, setScanFormError] = useState('')
+  const [isVolumeOpen, setIsVolumeOpen] = useState(false)
 
-  const libraryQuery = useQuery({
+  const librarySummaryQuery = useQuery({
     queryKey: ['library'],
     queryFn: getLibrarySummary,
+    refetchInterval: 5000,
   })
 
   const tracksQuery = useQuery({
     queryKey: ['tracks', query],
     queryFn: () => getTracks(query),
+    refetchInterval: 15000,
   })
 
-  const scansQuery = useQuery({
-    queryKey: ['scans'],
-    queryFn: getScans,
-    refetchInterval: (query) => {
-      const status = query.state.data?.current?.status
-      return status === 'waiting' || status === 'running' ? 1200 : false
+  const librariesQuery = useQuery({
+    queryKey: ['libraries'],
+    queryFn: getLibraries,
+    refetchInterval: 5000,
+  })
+
+  const rawLibraries = librariesQuery.data ?? []
+  const rawActiveTasks = rawLibraries
+    .map((library) => library.scan)
+    .filter((scan) => isActiveScan(scan.status))
+
+  const activeScanTasksQuery = useQuery({
+    queryKey: ['scan-tasks', 'active'],
+    queryFn: getActiveScanTasks,
+    enabled: rawActiveTasks.length > 0,
+    refetchInterval: (query) => ((query.state.data?.length ?? rawActiveTasks.length) > 0 ? 2000 : false),
+  })
+
+  const activeTasks = activeScanTasksQuery.data ?? rawActiveTasks
+  const activeTaskByLibrary = useMemo(() => {
+    return new Map(activeTasks.map((task) => [task.libraryId, task]))
+  }, [activeTasks])
+
+  const libraries = useMemo(() => {
+    return rawLibraries.map((library) => ({
+      ...library,
+      scan: activeTaskByLibrary.get(library.id) ?? library.scan,
+    }))
+  }, [activeTaskByLibrary, rawLibraries])
+
+  const scanLibraryMutation = useMutation({
+    mutationFn: scanLibrary,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['libraries'] })
+      queryClient.invalidateQueries({ queryKey: ['scan-tasks', 'active'] })
     },
   })
 
-  const scanMutation = useMutation({
-    mutationFn: startScan,
+  const createLibraryMutation = useMutation({
+    mutationFn: createLibrary,
+    onSuccess: (library) => {
+      setLibraryFormError('')
+      setLibraryPath(library.path)
+      queryClient.invalidateQueries({ queryKey: ['libraries'] })
+      queryClient.invalidateQueries({ queryKey: ['library'] })
+      scanLibraryMutation.mutate(library.id)
+    },
+  })
+
+  const deleteLibraryMutation = useMutation({
+    mutationFn: deleteLibrary,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['scans'] })
+      queryClient.invalidateQueries({ queryKey: ['libraries'] })
       queryClient.invalidateQueries({ queryKey: ['library'] })
       queryClient.invalidateQueries({ queryKey: ['tracks'] })
+      queryClient.invalidateQueries({ queryKey: ['scan-tasks', 'active'] })
     },
   })
 
-  const deleteScanJobMutation = useMutation({
-    mutationFn: deleteScanJob,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['scans'] })
+  useEffect(() => {
+    const activeCount = activeTasks.length
+    if (previousActiveCountRef.current > 0 && activeCount === 0) {
+      queryClient.invalidateQueries({ queryKey: ['libraries'] })
       queryClient.invalidateQueries({ queryKey: ['library'] })
       queryClient.invalidateQueries({ queryKey: ['tracks'] })
-    },
-  })
+    }
+    previousActiveCountRef.current = activeCount
+  }, [activeTasks.length, queryClient])
 
   const tracks = tracksQuery.data ?? []
-  const currentScan = scansQuery.data?.current
-  const recentScans = scansQuery.data?.recent ?? []
-  const latestScanStatus = currentScan?.status ?? recentScans[0]?.status
-  const activeScan = currentScan ?? recentScans[0]
-  const isScanning = scanMutation.isPending || currentScan?.status === 'waiting' || currentScan?.status === 'running'
-  const isKnownPath = recentScans.some((scan) => scan.path === scanPath.trim())
+  const filteredLibraries = useMemo(() => {
+    const normalized = libraryQueryText.trim().toLowerCase()
+    if (!normalized) {
+      return libraries
+    }
+    return libraries.filter((library) => library.path.toLowerCase().includes(normalized))
+  }, [libraries, libraryQueryText])
+
   const currentIndex = currentTrack ? tracks.findIndex((track) => track.id === currentTrack.id) : -1
   const canUsePrevious = tracks.length > 0 && currentIndex > 0
   const canUseNext = tracks.length > 0 && currentIndex >= 0 && currentIndex < tracks.length - 1
   const playerDuration = duration || (currentTrack?.durationMs ? currentTrack.durationMs / 1000 : 0)
   const isPlaying = playbackStatus === 'playing'
   const showPauseButton = playbackStatus === 'loading' || playbackStatus === 'playing'
+  const librarySummary = `${librarySummaryQuery.data?.rootCount ?? libraries.length} 个媒体库 · ${
+    librarySummaryQuery.data?.trackCount ?? tracks.length
+  } 首歌曲`
+  const backendStatus = librarySummaryQuery.isError ? '后端未连接' : librarySummaryQuery.isFetching ? '同步中' : '已连接'
 
-  useEffect(() => {
-    if (latestScanStatus === 'completed' || latestScanStatus === 'failed') {
-      queryClient.invalidateQueries({ queryKey: ['library'] })
-      queryClient.invalidateQueries({ queryKey: ['tracks'] })
-    }
-  }, [latestScanStatus, queryClient])
-
-  const librarySummary = useMemo(() => {
-    const rootCount = libraryQuery.data?.rootCount ?? 0
-    const trackCount = libraryQuery.data?.trackCount ?? tracks.length
-    return `${rootCount} 个目录 · ${trackCount} 首歌曲`
-  }, [libraryQuery.data, tracks.length])
-
-  const backendStatus = libraryQuery.isError ? '后端未连接' : libraryQuery.isFetching ? '同步中' : '已连接'
-
-  function handleScanSubmit(event: FormEvent<HTMLFormElement>) {
+  function handleLibrarySubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const path = scanPath.trim()
+    const path = libraryPath.trim()
     if (!path) {
-      setScanFormError('请输入音乐目录路径。')
+      setLibraryFormError('请输入音乐目录路径。')
       return
     }
 
-    setScanFormError('')
-    scanMutation.mutate({ path })
+    setLibraryFormError('')
+    createLibraryMutation.mutate({ path })
+  }
+
+  function handleScanLibrary(library: LibraryItem) {
+    scanLibraryMutation.mutate(library.id)
+  }
+
+  function handleDeleteLibrary(library: LibraryItem) {
+    const confirmed = window.confirm(
+      `确定删除这个媒体库吗？\n\n${library.path}\n\n这会删除媒体库索引、扫描状态和不再被其他媒体库引用的歌曲详情；不会删除本地音乐文件。`,
+    )
+    if (!confirmed) {
+      return
+    }
+
+    deleteLibraryMutation.mutate(library.id)
   }
 
   function handleSelectTrack(track: Track) {
@@ -179,15 +241,6 @@ function App() {
     }
   }
 
-  function handleDeleteScanJob(scan: ScanJob) {
-    const confirmed = window.confirm(`确定删除这个扫描任务吗？\n\n${scan.path}\n\n这会删除该任务记录，并清理对应目录的媒体库索引；不会删除本地音乐文件。`)
-    if (!confirmed) {
-      return
-    }
-
-    deleteScanJobMutation.mutate(scan.id)
-  }
-
   function handleSeek(value: number) {
     setCurrentTime(value)
     if (audioRef.current && Number.isFinite(audioRef.current.duration)) {
@@ -210,9 +263,23 @@ function App() {
         </div>
 
         <nav className="nav-list">
-          <button className="nav-item active" type="button" aria-label="歌曲">
+          <button
+            className={`nav-item ${view === 'songs' ? 'active' : ''}`}
+            type="button"
+            aria-label="歌曲"
+            onClick={() => setView('songs')}
+          >
             <ListMusic size={20} />
             <span>歌曲</span>
+          </button>
+          <button
+            className={`nav-item ${view === 'libraries' ? 'active' : ''}`}
+            type="button"
+            aria-label="媒体库"
+            onClick={() => setView('libraries')}
+          >
+            <FolderOpen size={20} />
+            <span>媒体库</span>
           </button>
         </nav>
       </aside>
@@ -220,154 +287,62 @@ function App() {
       <main className="workspace">
         <header className="topbar">
           <div>
-            <h1>阿言</h1>
+            <h1>{view === 'songs' ? '歌曲' : '媒体库'}</h1>
             <p>
               {librarySummary}
-              <span className={`connection-dot ${libraryQuery.isError ? 'offline' : 'online'}`}>{backendStatus}</span>
+              <span className={`connection-dot ${librarySummaryQuery.isError ? 'offline' : 'online'}`}>
+                {backendStatus}
+              </span>
             </p>
           </div>
 
           <label className="search-box">
             <Search size={18} />
             <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索标题、艺术家或专辑"
+              value={view === 'songs' ? query : libraryQueryText}
+              onChange={(event) => (view === 'songs' ? setQuery(event.target.value) : setLibraryQueryText(event.target.value))}
+              placeholder={view === 'songs' ? '搜索标题、艺术家或专辑' : '搜索媒体库路径'}
             />
-            {query && (
-              <button type="button" aria-label="清空搜索" onClick={() => setQuery('')}>
+            {(view === 'songs' ? query : libraryQueryText) && (
+              <button
+                type="button"
+                aria-label="清空搜索"
+                onClick={() => (view === 'songs' ? setQuery('') : setLibraryQueryText(''))}
+              >
                 <X size={16} />
               </button>
             )}
           </label>
         </header>
 
-        <section className="content-grid">
-          <section className="library-pane" aria-label="歌曲库">
-            <div className="now-summary">
-              <div>
-                <span className="eyebrow">正在播放</span>
-                <h2>{currentTrack?.title ?? '未选择歌曲'}</h2>
-                <p>{currentTrack ? `${displayArtist(currentTrack)} · ${displayAlbum(currentTrack)} · ${playbackLabel(playbackStatus)}` : '从歌曲列表选择一首开始播放'}</p>
-                {playerError && <em className="inline-error">{playerError}</em>}
-              </div>
-              <div className="passive-wave" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-                <span />
-                <span />
-                <span />
-                <span />
-              </div>
-            </div>
-
-            <div className="table-wrap">
-              <div className="table-header">
-                <h3>歌曲</h3>
-                <span>{tracks.length} 首</span>
-              </div>
-
-              <div className="table-scroll">
-                <table className="track-table">
-                  <thead>
-                    <tr>
-                      <th>标题</th>
-                      <th>艺术家</th>
-                      <th>专辑</th>
-                      <th>格式</th>
-                      <th>时长</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tracks.map((track) => (
-                      <tr
-                        key={track.id}
-                        className={trackRowClass(track, currentTrack, playbackStatus)}
-                        onClick={() => handleSelectTrack(track)}
-                      >
-                        <td>
-                          <button type="button" className="track-title">
-                            {track.title}
-                          </button>
-                        </td>
-                        <td className={!track.artist ? 'muted-cell' : undefined}>{displayArtist(track)}</td>
-                        <td className={!track.album ? 'muted-cell' : undefined}>{displayAlbum(track)}</td>
-                        <td>
-                          <span className="format-chip">{track.format}</span>
-                        </td>
-                        <td>{formatDuration(track.durationMs)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {tracksQuery.isLoading && <StateMessage title="正在读取歌曲库" body="稍等一下，阿言正在同步本地媒体库。" />}
-              {tracksQuery.isError && <StateMessage title="歌曲加载失败" body="请确认后端服务已启动，然后刷新页面或重新扫描。" tone="error" />}
-              {!tracksQuery.isLoading && !tracksQuery.isError && !tracks.length && (
-                <StateMessage
-                  title={query ? '没有匹配的歌曲' : isScanning ? '正在扫描音乐目录' : '还没有歌曲'}
-                  body={query ? '换个关键词试试，或清空搜索查看全部歌曲。' : isScanning ? '扫描完成后，这里会自动展示歌曲列表。' : '在右侧输入音乐目录并开始扫描后，这里会展示歌曲列表。'}
-                />
-              )}
-            </div>
-          </section>
-
-          <aside className="scan-panel" aria-label="扫描任务">
-            <div className="panel-heading">
-              <div>
-                <span className="eyebrow">Library scan</span>
-                <h2>扫描任务</h2>
-              </div>
-              <span className={`status-pill ${activeScan ? activeScan.status : 'completed'}`}>
-                {activeScan ? statusLabel(activeScan.status) : '空闲'}
-              </span>
-            </div>
-
-            <form className="scan-form" onSubmit={handleScanSubmit}>
-              <label htmlFor="scan-path">音乐目录</label>
-              <input
-                id="scan-path"
-                value={scanPath}
-                onChange={(event) => setScanPath(event.target.value)}
-                placeholder="/home/ghp/Music"
-                disabled={isScanning}
-              />
-              <div className="default-rules" aria-label="默认扫描规则">
-                <span>递归扫描</span>
-                <span>忽略隐藏文件</span>
-                {isKnownPath && <span>重新扫描此目录</span>}
-              </div>
-              {(scanFormError || scanMutation.isError) && (
-                <p className="form-error">{scanFormError || errorMessage(scanMutation.error, '扫描任务创建失败。')}</p>
-              )}
-              <button className="primary-button" type="submit" disabled={isScanning}>
-                {scanMutation.isPending ? '创建中' : isScanning ? '扫描中' : '开始扫描'}
-              </button>
-            </form>
-
-            {activeScan && <ScanProgress scan={activeScan} title={currentScan ? '当前任务' : '最近一次扫描'} />}
-
-            <section className="recent-scans">
-              <div className="section-title">
-                <h3>最近任务</h3>
-                <span>{recentScans.length}</span>
-              </div>
-
-              <div className="scan-list">
-                {recentScans.map((scan) => (
-                  <ScanItem
-                    key={scan.id}
-                    scan={scan}
-                    onDelete={handleDeleteScanJob}
-                    isDeleting={deleteScanJobMutation.isPending}
-                  />
-                ))}
-              </div>
-            </section>
-          </aside>
-        </section>
+        {view === 'songs' ? (
+          <SongsView
+            tracks={tracks}
+            currentTrack={currentTrack}
+            playbackStatus={playbackStatus}
+            playerError={playerError}
+            isLoading={tracksQuery.isLoading}
+            isError={tracksQuery.isError}
+            query={query}
+            onSelectTrack={handleSelectTrack}
+          />
+        ) : (
+          <LibrariesView
+            libraries={filteredLibraries}
+            libraryPath={libraryPath}
+            formError={libraryFormError}
+            isCreating={createLibraryMutation.isPending}
+            createError={createLibraryMutation.error}
+            isScanning={scanLibraryMutation.isPending}
+            isDeleting={deleteLibraryMutation.isPending}
+            isLoading={librariesQuery.isLoading}
+            isError={librariesQuery.isError}
+            onPathChange={setLibraryPath}
+            onSubmit={handleLibrarySubmit}
+            onScan={handleScanLibrary}
+            onDelete={handleDeleteLibrary}
+          />
+        )}
       </main>
 
       <footer className="player-bar">
@@ -408,17 +383,29 @@ function App() {
           <span>{formatDurationSeconds(playerDuration)}</span>
         </div>
 
-        <label className="volume-control">
-          <Volume2 size={18} />
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={volume}
-            onChange={(event) => handleVolumeChange(Number(event.target.value))}
+        <div className="volume-popover-wrap">
+          {isVolumeOpen && (
+            <div className="volume-popover">
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={volume}
+                onChange={(event) => handleVolumeChange(Number(event.target.value))}
+                aria-label="音量"
+              />
+            </div>
+          )}
+          <button
+            type="button"
+            className="volume-button"
             aria-label="音量"
-          />
-        </label>
+            title="音量"
+            onClick={() => setIsVolumeOpen((open) => !open)}
+          >
+            <Volume2 size={18} />
+          </button>
+        </div>
 
         <audio
           ref={audioRef}
@@ -451,61 +438,252 @@ function App() {
   )
 }
 
-function ScanProgress({ scan, title }: { scan: ScanJob; title: string }) {
-  const progress = scan.totalFiles > 0 ? Math.round((scan.scannedFiles / scan.totalFiles) * 100) : 0
-
+function SongsView({
+  tracks,
+  currentTrack,
+  playbackStatus,
+  playerError,
+  isLoading,
+  isError,
+  query,
+  onSelectTrack,
+}: {
+  tracks: Track[]
+  currentTrack: Track | null
+  playbackStatus: PlaybackStatus
+  playerError: string
+  isLoading: boolean
+  isError: boolean
+  query: string
+  onSelectTrack: (track: Track) => void
+}) {
   return (
-    <section className="current-scan">
-      <span className="current-scan-title">{title}</span>
-      <div className="scan-progress-meta">
-        <span>{statusLabel(scan.status)}</span>
-        <strong>
-          {scan.scannedFiles} / {scan.totalFiles}
-        </strong>
+    <section className="library-pane" aria-label="歌曲库">
+      <div className="now-summary">
+        <div>
+          <span className="eyebrow">正在播放</span>
+          <h2>{currentTrack?.title ?? '未选择歌曲'}</h2>
+          <p>{currentTrack ? `${displayArtist(currentTrack)} · ${displayAlbum(currentTrack)} · ${playbackLabel(playbackStatus)}` : '从歌曲列表选择一首开始播放'}</p>
+          {playerError && <em className="inline-error">{playerError}</em>}
+        </div>
+        <div className="passive-wave" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+          <span />
+          <span />
+          <span />
+          <span />
+        </div>
       </div>
-      <div className="progress-track" aria-label={`扫描进度 ${progress}%`}>
-        <span style={{ width: `${progress}%` }} />
+
+      <div className="table-wrap">
+        <div className="table-header">
+          <h3>全部歌曲</h3>
+          <span>{tracks.length} 首</span>
+        </div>
+
+        <div className="table-scroll">
+          <table className="track-table">
+            <thead>
+              <tr>
+                <th>标题</th>
+                <th>艺术家</th>
+                <th>专辑</th>
+                <th>时长</th>
+                <th>格式</th>
+                <th>路径</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tracks.map((track) => (
+                <tr
+                  key={track.id}
+                  className={trackRowClass(track, currentTrack, playbackStatus)}
+                  onClick={() => onSelectTrack(track)}
+                >
+                  <td>
+                    <button type="button" className="track-title">
+                      {track.title}
+                    </button>
+                  </td>
+                  <td className={!track.artist ? 'muted-cell' : undefined}>{displayArtist(track)}</td>
+                  <td className={!track.album ? 'muted-cell' : undefined}>{displayAlbum(track)}</td>
+                  <td>{formatDuration(track.durationMs)}</td>
+                  <td>
+                    <span className="format-chip">{track.format}</span>
+                  </td>
+                  <td className="path-cell">{track.path}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {isLoading && <StateMessage title="正在读取歌曲库" body="稍等一下，阿言正在同步本地媒体库。" />}
+        {isError && <StateMessage title="歌曲加载失败" body="请确认后端服务已启动，然后刷新页面或重新扫描。" tone="error" />}
+        {!isLoading && !isError && !tracks.length && (
+          <StateMessage
+            title={query ? '没有匹配的歌曲' : '还没有歌曲'}
+            body={query ? '换个关键词试试，或清空搜索查看全部歌曲。' : '添加媒体库并完成扫描后，这里会展示歌曲列表。'}
+          />
+        )}
       </div>
-      <p>{scan.path}</p>
-      {scan.message && <small>{scan.message}</small>}
-      {scan.errorMessage && <em>{scan.errorMessage}</em>}
     </section>
   )
 }
 
-function ScanItem({
-  scan,
-  onDelete,
+function LibrariesView({
+  libraries,
+  libraryPath,
+  formError,
+  createError,
+  isCreating,
+  isScanning,
   isDeleting,
+  isLoading,
+  isError,
+  onPathChange,
+  onSubmit,
+  onScan,
+  onDelete,
 }: {
-  scan: ScanJob
-  onDelete: (scan: ScanJob) => void
+  libraries: LibraryItem[]
+  libraryPath: string
+  formError: string
+  createError: unknown
+  isCreating: boolean
+  isScanning: boolean
   isDeleting: boolean
+  isLoading: boolean
+  isError: boolean
+  onPathChange: (path: string) => void
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void
+  onScan: (library: LibraryItem) => void
+  onDelete: (library: LibraryItem) => void
 }) {
-  const Icon = scan.status === 'completed' ? CheckCircle2 : scan.status === 'failed' ? XCircle : Clock3
-  const canDelete = scan.status !== 'running' && scan.status !== 'waiting'
+  return (
+    <section className="libraries-page" aria-label="媒体库管理">
+      <form className="library-toolbar" onSubmit={onSubmit}>
+        <label htmlFor="library-path">音乐目录</label>
+        <input
+          id="library-path"
+          value={libraryPath}
+          onChange={(event) => onPathChange(event.target.value)}
+          placeholder="/home/ghp/Music"
+          disabled={isCreating}
+        />
+        <button className="primary-button" type="submit" disabled={isCreating}>
+          <Plus size={17} />
+          {isCreating ? '添加中' : '添加媒体库'}
+        </button>
+        {(formError || Boolean(createError)) && <p className="form-error">{formError || errorMessage(createError, '媒体库添加失败。')}</p>}
+      </form>
+
+      <div className="libraries-wrap">
+        <div className="table-header">
+          <h3>媒体库</h3>
+          <span>{libraries.length} 个</span>
+        </div>
+
+        <div className="table-scroll">
+          <table className="library-table">
+            <thead>
+              <tr>
+                <th>目录</th>
+                <th>歌曲数</th>
+                <th>扫描状态</th>
+                <th>进度</th>
+                <th>完成时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {libraries.map((library) => (
+                <LibraryRow
+                  key={library.id}
+                  library={library}
+                  isScanning={isScanning}
+                  isDeleting={isDeleting}
+                  onScan={onScan}
+                  onDelete={onDelete}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {isLoading && <StateMessage title="正在读取媒体库" body="稍等一下，阿言正在同步媒体库目录。" />}
+        {isError && <StateMessage title="媒体库加载失败" body="请确认后端服务已启动，然后刷新页面。" tone="error" />}
+        {!isLoading && !isError && !libraries.length && (
+          <StateMessage title="还没有媒体库" body="添加一个音乐目录后，阿言会自动开始第一次扫描。" />
+        )}
+      </div>
+    </section>
+  )
+}
+
+function LibraryRow({
+  library,
+  isScanning,
+  isDeleting,
+  onScan,
+  onDelete,
+}: {
+  library: LibraryItem
+  isScanning: boolean
+  isDeleting: boolean
+  onScan: (library: LibraryItem) => void
+  onDelete: (library: LibraryItem) => void
+}) {
+  const progress = library.scan.totalFiles > 0 ? Math.round((library.scan.scannedFiles / library.scan.totalFiles) * 100) : 0
+  const active = isActiveScan(library.scan.status)
+  const Icon = library.scan.status === 'completed' ? CheckCircle2 : library.scan.status === 'failed' ? XCircle : Clock3
 
   return (
-    <article className="scan-item">
-      <Icon className={`scan-icon ${scan.status}`} size={18} />
-      <div>
-        <strong>{scan.path}</strong>
-        <span>
-          {statusLabel(scan.status)} · {scan.scannedFiles}/{scan.totalFiles} · {scan.startedAt}
+    <tr>
+      <td className="path-cell strong-path">{library.path}</td>
+      <td>{library.musicCount}</td>
+      <td>
+        <span className={`library-status ${library.scan.status}`}>
+          <Icon size={15} />
+          {statusLabel(library.scan.status)}
         </span>
-        {scan.message && <small>{scan.message}</small>}
-        {scan.errorMessage && <em>{scan.errorMessage}</em>}
-      </div>
-      <button
-        type="button"
-        aria-label="删除扫描任务"
-        title="删除扫描任务"
-        disabled={!canDelete || isDeleting}
-        onClick={() => onDelete(scan)}
-      >
-        <Trash2 size={15} />
-      </button>
-    </article>
+        {library.scan.message && <small className={library.scan.status === 'failed' ? 'scan-message error' : 'scan-message'}>{library.scan.message}</small>}
+      </td>
+      <td>
+        <div className="mini-progress" aria-label={`扫描进度 ${progress}%`}>
+          <span style={{ width: `${progress}%` }} />
+        </div>
+        <small className="progress-text">
+          {library.scan.scannedFiles} / {library.scan.totalFiles}
+        </small>
+      </td>
+      <td>{library.scan.completedAt || '未完成'}</td>
+      <td>
+        <div className="row-actions">
+          <button
+            type="button"
+            aria-label={library.musicCount > 0 ? '再次扫描' : '扫描'}
+            title={library.musicCount > 0 ? '再次扫描' : '扫描'}
+            disabled={active || isScanning}
+            onClick={() => onScan(library)}
+          >
+            <RefreshCw size={15} />
+          </button>
+          <button
+            className="danger"
+            type="button"
+            aria-label="删除媒体库"
+            title="删除媒体库"
+            disabled={active || isDeleting}
+            onClick={() => onDelete(library)}
+          >
+            <Trash2 size={15} />
+          </button>
+        </div>
+      </td>
+    </tr>
   )
 }
 
@@ -518,8 +696,14 @@ function StateMessage({ title, body, tone = 'default' }: { title: string; body: 
   )
 }
 
-function statusLabel(status: ScanJob['status']) {
+function isActiveScan(status: ScanStatus) {
+  return status === 'waiting' || status === 'running'
+}
+
+function statusLabel(status: ScanStatus) {
   switch (status) {
+    case 'idle':
+      return '未扫描'
     case 'waiting':
       return '等待中'
     case 'running':
@@ -575,10 +759,10 @@ function playbackLabel(status: PlaybackStatus) {
 }
 
 function trackRowClass(track: Track, currentTrack: Track | null, status: PlaybackStatus) {
-  if (currentTrack?.id !== track.id) {
-    return undefined
+  if (currentTrack?.id === track.id) {
+    return `selected ${status}`
   }
-  return `selected ${status}`
+  return undefined
 }
 
 function errorMessage(error: unknown, fallback: string) {
