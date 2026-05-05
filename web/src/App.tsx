@@ -517,6 +517,10 @@ function App() {
     setQueue((items) => items.filter((item) => item.id !== track.id || item.id === currentTrack?.id))
   }
 
+  function handleClearQueue() {
+    setQueue((items) => (currentTrack ? items.filter((track) => track.id === currentTrack.id) : []))
+  }
+
   function nextQueueTrack() {
     if (!queue.length) {
       return null
@@ -572,7 +576,12 @@ function App() {
           <div className="brand-mark" title="阿言">
             <AudioLines size={24} strokeWidth={2.2} />
           </div>
-          {!isSidebarCollapsed && <strong>阿言</strong>}
+          {!isSidebarCollapsed && (
+            <div className="brand-title">
+              <strong>阿言</strong>
+              <span>v0.4</span>
+            </div>
+          )}
           <button
             type="button"
             className="sidebar-toggle"
@@ -733,13 +742,24 @@ function App() {
 
       <footer className="player-bar">
         <div className="player-track">
-          <div className="track-glyph">
-            <AudioLines size={18} />
+          <div className="player-cover" aria-hidden="true">
+            {currentTrack ? currentTrack.title.slice(0, 1) : <AudioLines size={20} />}
           </div>
           <div>
             <strong>{currentTrack?.title ?? '未选择歌曲'}</strong>
             <span>{currentTrack ? displayArtist(currentTrack) : '选择歌曲后开始播放'}</span>
           </div>
+          {currentTrack && (
+            <button
+              type="button"
+              className={`current-like-button ${currentTrack.liked ? 'liked' : ''}`}
+              aria-label={currentTrack.liked ? '取消喜欢' : '加入我喜欢'}
+              title={currentTrack.liked ? '取消喜欢' : '加入我喜欢'}
+              onClick={() => handleToggleLike(currentTrack)}
+            >
+              <Heart size={16} fill={currentTrack.liked ? 'currentColor' : 'none'} />
+            </button>
+          )}
         </div>
 
         <div className="player-controls">
@@ -854,6 +874,7 @@ function App() {
           onClose={() => setIsQueueOpen(false)}
           onPlayTrack={handlePlayTrackFromList}
           onRemoveTrack={handleRemoveQueueTrack}
+          onClearQueue={handleClearQueue}
         />
       )}
 
@@ -905,6 +926,7 @@ function QueueDrawer({
   onClose,
   onPlayTrack,
   onRemoveTrack,
+  onClearQueue,
 }: {
   queue: Track[]
   currentTrack: Track | null
@@ -913,6 +935,7 @@ function QueueDrawer({
   onClose: () => void
   onPlayTrack: (track: Track) => void
   onRemoveTrack: (track: Track) => void
+  onClearQueue: () => void
 }) {
   const upcoming = currentTrack ? queue.filter((track) => track.id !== currentTrack.id) : queue
   return (
@@ -956,6 +979,13 @@ function QueueDrawer({
           {!upcoming.length && <p className="queue-empty">没有后续歌曲</p>}
         </div>
       </section>
+
+      <div className="queue-drawer-footer">
+        <span>共 {queue.length} 首</span>
+        <button type="button" onClick={onClearQueue}>
+          清空队列
+        </button>
+      </div>
     </aside>
   )
 }
@@ -985,6 +1015,9 @@ function PlaylistPickerModal({
   onCreateAndAdd: () => void
   onClose: () => void
 }) {
+  const [playlistSearch, setPlaylistSearch] = useState('')
+  const filteredPlaylists = playlists.filter((playlist) => playlist.name.toLowerCase().includes(playlistSearch.trim().toLowerCase()))
+
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <section className="playlist-modal" role="dialog" aria-modal="true" aria-labelledby="playlist-modal-title" onClick={(event) => event.stopPropagation()}>
@@ -998,8 +1031,18 @@ function PlaylistPickerModal({
           </button>
         </div>
 
+        <label className="modal-search">
+          <Search size={17} />
+          <input
+            value={playlistSearch}
+            onChange={(event) => setPlaylistSearch(event.target.value)}
+            placeholder="搜索歌单"
+            disabled={isSaving}
+          />
+        </label>
+
         <div className="playlist-choice-list">
-          {playlists.map((playlist) => (
+          {filteredPlaylists.map((playlist) => (
             <button
               key={playlist.id}
               type="button"
@@ -1012,6 +1055,7 @@ function PlaylistPickerModal({
             </button>
           ))}
           {!playlists.length && <p className="playlist-choice-empty">还没有普通歌单，可以直接新建一个并添加当前歌曲。</p>}
+          {playlists.length > 0 && !filteredPlaylists.length && <p className="playlist-choice-empty">没有匹配的歌单。</p>}
         </div>
 
         <div className="modal-divider" />
@@ -1375,6 +1419,9 @@ function PlaylistTrackTable({
       <table className="track-table">
         <thead>
           <tr>
+            <th className="check-col">
+              <span className="fake-checkbox" aria-hidden="true" />
+            </th>
             <th>播放</th>
             <th>标题</th>
             <th>艺术家</th>
@@ -1394,6 +1441,9 @@ function PlaylistTrackTable({
               onClick={() => onSelectTrack(track)}
               onDoubleClick={() => onPlayTrack(track)}
             >
+              <td className="check-col">
+                <span className="fake-checkbox" aria-hidden="true" />
+              </td>
               <td>
                 <button
                   type="button"
