@@ -41,9 +41,33 @@ CREATE TABLE IF NOT EXISTS library_music (
   UNIQUE (library_id, music_id)
 );
 
+CREATE TABLE IF NOT EXISTS playlists (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('normal', 'liked', 'recent')),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE TABLE IF NOT EXISTS playlist_music (
+  playlist_id INTEGER NOT NULL,
+  music_id INTEGER NOT NULL,
+  added_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  last_played_at TEXT,
+  FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE,
+  FOREIGN KEY (music_id) REFERENCES music(id) ON DELETE CASCADE,
+  UNIQUE (playlist_id, music_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_music_title ON music(title);
 CREATE INDEX IF NOT EXISTS idx_music_artist ON music(artist);
 CREATE INDEX IF NOT EXISTS idx_music_album ON music(album);
 CREATE INDEX IF NOT EXISTS idx_library_music_library_id ON library_music(library_id);
 CREATE INDEX IF NOT EXISTS idx_library_music_music_id ON library_music(music_id);
 CREATE INDEX IF NOT EXISTS idx_scan_tasks_status ON scan_tasks(status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_playlists_liked_unique ON playlists(type) WHERE type = 'liked';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_playlists_recent_unique ON playlists(type) WHERE type = 'recent';
+CREATE INDEX IF NOT EXISTS idx_playlists_type ON playlists(type);
+CREATE INDEX IF NOT EXISTS idx_playlist_music_playlist_id ON playlist_music(playlist_id);
+CREATE INDEX IF NOT EXISTS idx_playlist_music_music_id ON playlist_music(music_id);
+CREATE INDEX IF NOT EXISTS idx_playlist_music_last_played_at ON playlist_music(last_played_at);

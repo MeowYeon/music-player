@@ -31,6 +31,7 @@ type Track struct {
 	MTimeUnix  int64
 	CreatedAt  string
 	UpdatedAt  string
+	Liked      bool
 }
 
 type MusicInput struct {
@@ -48,4 +49,13 @@ type LibrarySummary struct {
 	RootCount        int64
 	TrackCount       int64
 	LatestScanStatus string
+}
+
+type Playlist struct {
+	ID         int64
+	Name       string
+	Type       string
+	TrackCount int64
+	CreatedAt  string
+	UpdatedAt  string
 }

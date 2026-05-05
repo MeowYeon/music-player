@@ -48,7 +48,7 @@ func (s *Store) init(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("init schema: %w", err)
 	}
-	return nil
+	return s.ensureSystemPlaylists(ctx)
 }
 
 func ensureParentDir(dbPath string) error {
@@ -176,6 +176,260 @@ func (s *Store) DeleteLibrary(ctx context.Context, id int64) error {
 	}
 
 	return tx.Commit()
+}
+
+func (s *Store) ensureSystemPlaylists(ctx context.Context) error {
+	if _, err := s.db.ExecContext(ctx, `
+		INSERT INTO playlists (name, type)
+		VALUES ('我喜欢', 'liked')
+		ON CONFLICT(type) WHERE type = 'liked' DO UPDATE SET
+			name = '我喜欢',
+			updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+	`); err != nil {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO playlists (name, type)
+		VALUES ('最近播放', 'recent')
+		ON CONFLICT(type) WHERE type = 'recent' DO UPDATE SET
+			name = '最近播放',
+			updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+	`)
+	return err
+}
+
+func (s *Store) ListPlaylists(ctx context.Context) ([]Playlist, error) {
+	rows, err := s.db.QueryContext(ctx, playlistSelectSQL()+` WHERE p.type = 'normal' ORDER BY p.created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var playlists []Playlist
+	for rows.Next() {
+		playlist, err := scanPlaylist(rows)
+		if err != nil {
+			return nil, err
+		}
+		playlists = append(playlists, playlist)
+	}
+	return playlists, rows.Err()
+}
+
+func (s *Store) CreatePlaylist(ctx context.Context, name string) (Playlist, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return Playlist{}, fmt.Errorf("playlist name is required")
+	}
+	row := s.db.QueryRowContext(ctx, `
+		INSERT INTO playlists (name, type)
+		VALUES (?, 'normal')
+		RETURNING id
+	`, name)
+	var id int64
+	if err := row.Scan(&id); err != nil {
+		return Playlist{}, err
+	}
+	return s.GetPlaylist(ctx, id)
+}
+
+func (s *Store) GetPlaylist(ctx context.Context, id int64) (Playlist, error) {
+	row := s.db.QueryRowContext(ctx, playlistSelectSQL()+` WHERE p.id = ?`, id)
+	playlist, err := scanPlaylist(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Playlist{}, ErrNotFound
+	}
+	return playlist, err
+}
+
+func (s *Store) RenamePlaylist(ctx context.Context, id int64, name string) (Playlist, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return Playlist{}, fmt.Errorf("playlist name is required")
+	}
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE playlists
+		SET name = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+		WHERE id = ? AND type = 'normal'
+	`, name, id)
+	if err != nil {
+		return Playlist{}, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return Playlist{}, err
+	}
+	if affected == 0 {
+		return Playlist{}, ErrInvalidOperation
+	}
+	return s.GetPlaylist(ctx, id)
+}
+
+func (s *Store) DeletePlaylist(ctx context.Context, id int64) error {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM playlists WHERE id = ? AND type = 'normal'`, id)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrInvalidOperation
+	}
+	return nil
+}
+
+func playlistSelectSQL() string {
+	return `
+		SELECT
+			p.id,
+			p.name,
+			p.type,
+			(SELECT COUNT(*) FROM playlist_music pm WHERE pm.playlist_id = p.id),
+			p.created_at,
+			p.updated_at
+		FROM playlists p
+	`
+}
+
+func (s *Store) AddTrackToPlaylist(ctx context.Context, playlistID int64, trackID int64) error {
+	if err := s.ensureNormalPlaylistAndMusic(ctx, playlistID, trackID); err != nil {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO playlist_music (playlist_id, music_id)
+		VALUES (?, ?)
+		ON CONFLICT(playlist_id, music_id) DO NOTHING
+	`, playlistID, trackID)
+	return err
+}
+
+func (s *Store) RemoveTrackFromPlaylist(ctx context.Context, playlistID int64, trackID int64) error {
+	if err := s.ensureNormalPlaylistAndMusic(ctx, playlistID, trackID); err != nil {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM playlist_music WHERE playlist_id = ? AND music_id = ?`, playlistID, trackID)
+	return err
+}
+
+func (s *Store) ListPlaylistTracks(ctx context.Context, playlistID int64) ([]Track, error) {
+	var playlistType string
+	if err := s.db.QueryRowContext(ctx, `SELECT type FROM playlists WHERE id = ?`, playlistID).Scan(&playlistType); errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	} else if err != nil {
+		return nil, err
+	}
+
+	orderBy := `pm.added_at ASC`
+	if playlistType == "recent" {
+		orderBy = `COALESCE(pm.last_played_at, pm.added_at) DESC`
+	}
+
+	limit := ``
+	if playlistType == "recent" {
+		limit = ` LIMIT 50`
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT `+trackSelectColumns()+`
+		FROM music m
+		JOIN playlist_music pm ON pm.music_id = m.id
+		WHERE pm.playlist_id = ?
+		ORDER BY `+orderBy+limit, playlistID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanTracks(rows)
+}
+
+func (s *Store) ListSystemPlaylistTracks(ctx context.Context, playlistType string) ([]Track, error) {
+	id, err := s.systemPlaylistID(ctx, playlistType)
+	if err != nil {
+		return nil, err
+	}
+	return s.ListPlaylistTracks(ctx, id)
+}
+
+func (s *Store) LikeTrack(ctx context.Context, trackID int64) error {
+	if err := s.ensureMusic(ctx, trackID); err != nil {
+		return err
+	}
+	id, err := s.systemPlaylistID(ctx, "liked")
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO playlist_music (playlist_id, music_id)
+		VALUES (?, ?)
+		ON CONFLICT(playlist_id, music_id) DO NOTHING
+	`, id, trackID)
+	return err
+}
+
+func (s *Store) UnlikeTrack(ctx context.Context, trackID int64) error {
+	id, err := s.systemPlaylistID(ctx, "liked")
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `DELETE FROM playlist_music WHERE playlist_id = ? AND music_id = ?`, id, trackID)
+	return err
+}
+
+func (s *Store) RecordRecentPlay(ctx context.Context, trackID int64) error {
+	if err := s.ensureMusic(ctx, trackID); err != nil {
+		return err
+	}
+	id, err := s.systemPlaylistID(ctx, "recent")
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO playlist_music (playlist_id, music_id, last_played_at)
+		VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+		ON CONFLICT(playlist_id, music_id) DO UPDATE SET
+			last_played_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+	`, id, trackID)
+	return err
+}
+
+func (s *Store) systemPlaylistID(ctx context.Context, playlistType string) (int64, error) {
+	var id int64
+	err := s.db.QueryRowContext(ctx, `SELECT id FROM playlists WHERE type = ?`, playlistType).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		if err := s.ensureSystemPlaylists(ctx); err != nil {
+			return 0, err
+		}
+		err = s.db.QueryRowContext(ctx, `SELECT id FROM playlists WHERE type = ?`, playlistType).Scan(&id)
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	return id, err
+}
+
+func (s *Store) ensureNormalPlaylistAndMusic(ctx context.Context, playlistID int64, trackID int64) error {
+	var playlistType string
+	if err := s.db.QueryRowContext(ctx, `SELECT type FROM playlists WHERE id = ?`, playlistID).Scan(&playlistType); errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	} else if err != nil {
+		return err
+	}
+	if playlistType != "normal" {
+		return ErrInvalidOperation
+	}
+	return s.ensureMusic(ctx, trackID)
+}
+
+func (s *Store) ensureMusic(ctx context.Context, trackID int64) error {
+	var exists int
+	if err := s.db.QueryRowContext(ctx, `SELECT 1 FROM music WHERE id = ?`, trackID).Scan(&exists); errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	} else if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *Store) StartScanTask(ctx context.Context, libraryID int64) (ScanTask, error) {
@@ -395,20 +649,46 @@ func deleteOrphanMusic(ctx context.Context, tx *sql.Tx, musicIDs []int64) error 
 
 func (s *Store) ListTracks(ctx context.Context, query string) ([]Track, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, path, title, artist, album, duration_ms, format, size_bytes, mtime_unix, created_at, updated_at
-		FROM music
+		SELECT `+trackSelectColumns()+`
+		FROM music m
 		WHERE
 			? = ''
-			OR title LIKE '%' || ? || '%'
-			OR artist LIKE '%' || ? || '%'
-			OR album LIKE '%' || ? || '%'
-		ORDER BY title COLLATE NOCASE ASC, artist COLLATE NOCASE ASC, album COLLATE NOCASE ASC
+			OR m.title LIKE '%' || ? || '%'
+			OR m.artist LIKE '%' || ? || '%'
+			OR m.album LIKE '%' || ? || '%'
+		ORDER BY m.title COLLATE NOCASE ASC, m.artist COLLATE NOCASE ASC, m.album COLLATE NOCASE ASC
 	`, query, query, query, query)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
+	return scanTracks(rows)
+}
+
+func trackSelectColumns() string {
+	return `
+		m.id,
+		m.path,
+		m.title,
+		m.artist,
+		m.album,
+		m.duration_ms,
+		m.format,
+		m.size_bytes,
+		m.mtime_unix,
+		m.created_at,
+		m.updated_at,
+		EXISTS (
+			SELECT 1
+			FROM playlist_music liked_pm
+			JOIN playlists liked_p ON liked_p.id = liked_pm.playlist_id
+			WHERE liked_p.type = 'liked' AND liked_pm.music_id = m.id
+		)
+	`
+}
+
+func scanTracks(rows *sql.Rows) ([]Track, error) {
 	var tracks []Track
 	for rows.Next() {
 		var track Track
@@ -424,6 +704,7 @@ func (s *Store) ListTracks(ctx context.Context, query string) ([]Track, error) {
 			&track.MTimeUnix,
 			&track.CreatedAt,
 			&track.UpdatedAt,
+			&track.Liked,
 		); err != nil {
 			return nil, err
 		}
@@ -494,4 +775,17 @@ func scanScanTask(row scanner) (ScanTask, error) {
 		&task.CompletedAt,
 	)
 	return task, err
+}
+
+func scanPlaylist(row scanner) (Playlist, error) {
+	var playlist Playlist
+	err := row.Scan(
+		&playlist.ID,
+		&playlist.Name,
+		&playlist.Type,
+		&playlist.TrackCount,
+		&playlist.CreatedAt,
+		&playlist.UpdatedAt,
+	)
+	return playlist, err
 }

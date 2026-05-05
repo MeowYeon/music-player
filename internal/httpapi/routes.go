@@ -29,6 +29,17 @@ type Storage interface {
 	ListActiveScanTasks(ctx context.Context) ([]storage.ScanTask, error)
 	ListTracks(ctx context.Context, query string) ([]storage.Track, error)
 	GetTrackPath(ctx context.Context, id int64) (string, error)
+	ListPlaylists(ctx context.Context) ([]storage.Playlist, error)
+	CreatePlaylist(ctx context.Context, name string) (storage.Playlist, error)
+	RenamePlaylist(ctx context.Context, id int64, name string) (storage.Playlist, error)
+	DeletePlaylist(ctx context.Context, id int64) error
+	ListPlaylistTracks(ctx context.Context, playlistID int64) ([]storage.Track, error)
+	AddTrackToPlaylist(ctx context.Context, playlistID int64, trackID int64) error
+	RemoveTrackFromPlaylist(ctx context.Context, playlistID int64, trackID int64) error
+	ListSystemPlaylistTracks(ctx context.Context, playlistType string) ([]storage.Track, error)
+	LikeTrack(ctx context.Context, trackID int64) error
+	UnlikeTrack(ctx context.Context, trackID int64) error
+	RecordRecentPlay(ctx context.Context, trackID int64) error
 }
 
 type Scanner interface {
@@ -53,6 +64,18 @@ func (s *Server) Routes() http.Handler {
 	r.Get("/api/scan-tasks/active", s.handleActiveScanTasks)
 	r.Get("/api/tracks", s.handleTracks)
 	r.Get("/api/tracks/{id}/stream", s.handleTrackStream)
+	r.Get("/api/playlists", s.handlePlaylists)
+	r.Post("/api/playlists", s.handleCreatePlaylist)
+	r.Patch("/api/playlists/{id}", s.handleRenamePlaylist)
+	r.Delete("/api/playlists/{id}", s.handleDeletePlaylist)
+	r.Get("/api/playlists/{id}/tracks", s.handlePlaylistTracks)
+	r.Post("/api/playlists/{id}/tracks", s.handleAddPlaylistTrack)
+	r.Delete("/api/playlists/{id}/tracks/{trackId}", s.handleRemovePlaylistTrack)
+	r.Get("/api/playlists/liked/tracks", s.handleLikedTracks)
+	r.Get("/api/playlists/recent/tracks", s.handleRecentTracks)
+	r.Post("/api/tracks/{id}/like", s.handleLikeTrack)
+	r.Delete("/api/tracks/{id}/like", s.handleUnlikeTrack)
+	r.Post("/api/tracks/{id}/recent-play", s.handleRecordRecentPlay)
 	return r
 }
 
@@ -166,18 +189,9 @@ func (s *Server) handleActiveScanTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTracks(w http.ResponseWriter, r *http.Request) {
-	tracks, err := s.storage.ListTracks(r.Context(), r.URL.Query().Get("q"))
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	response := make([]trackResponse, 0, len(tracks))
-	for _, track := range tracks {
-		response = append(response, trackResponseFromStorage(track))
-	}
-
-	writeJSON(w, http.StatusOK, response)
+	s.writeTracks(w, r, func() ([]storage.Track, error) {
+		return s.storage.ListTracks(r.Context(), r.URL.Query().Get("q"))
+	})
 }
 
 func (s *Server) handleTrackStream(w http.ResponseWriter, r *http.Request) {
@@ -211,6 +225,208 @@ func (s *Server) handleTrackStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.ServeContent(w, r, info.Name(), info.ModTime(), file)
+}
+
+func (s *Server) handlePlaylists(w http.ResponseWriter, r *http.Request) {
+	playlists, err := s.storage.ListPlaylists(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	response := make([]playlistResponse, 0, len(playlists))
+	for _, playlist := range playlists {
+		response = append(response, playlistResponseFromStorage(playlist))
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) handleCreatePlaylist(w http.ResponseWriter, r *http.Request) {
+	var request playlistRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	playlist, err := s.storage.CreatePlaylist(r.Context(), request.Name)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, playlistResponseFromStorage(playlist))
+}
+
+func (s *Server) handleRenamePlaylist(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	var request playlistRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	playlist, err := s.storage.RenamePlaylist(r.Context(), id, request.Name)
+	if errors.Is(err, storage.ErrInvalidOperation) || errors.Is(err, storage.ErrNotFound) {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, playlistResponseFromStorage(playlist))
+}
+
+func (s *Server) handleDeletePlaylist(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.storage.DeletePlaylist(r.Context(), id); errors.Is(err, storage.ErrInvalidOperation) || errors.Is(err, storage.ErrNotFound) {
+		writeError(w, http.StatusNotFound, err)
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handlePlaylistTracks(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.writeTracks(w, r, func() ([]storage.Track, error) {
+		return s.storage.ListPlaylistTracks(r.Context(), id)
+	})
+}
+
+func (s *Server) handleAddPlaylistTrack(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	var request playlistTrackRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.storage.AddTrackToPlaylist(r.Context(), id, request.TrackID); errors.Is(err, storage.ErrNotFound) {
+		writeError(w, http.StatusNotFound, err)
+		return
+	} else if errors.Is(err, storage.ErrInvalidOperation) {
+		writeError(w, http.StatusConflict, err)
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleRemovePlaylistTrack(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	trackID, err := strconv.ParseInt(chi.URLParam(r, "trackId"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.storage.RemoveTrackFromPlaylist(r.Context(), id, trackID); errors.Is(err, storage.ErrNotFound) {
+		writeError(w, http.StatusNotFound, err)
+		return
+	} else if errors.Is(err, storage.ErrInvalidOperation) {
+		writeError(w, http.StatusConflict, err)
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleLikedTracks(w http.ResponseWriter, r *http.Request) {
+	s.writeTracks(w, r, func() ([]storage.Track, error) {
+		return s.storage.ListSystemPlaylistTracks(r.Context(), "liked")
+	})
+}
+
+func (s *Server) handleRecentTracks(w http.ResponseWriter, r *http.Request) {
+	s.writeTracks(w, r, func() ([]storage.Track, error) {
+		return s.storage.ListSystemPlaylistTracks(r.Context(), "recent")
+	})
+}
+
+func (s *Server) handleLikeTrack(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.storage.LikeTrack(r.Context(), id); errors.Is(err, storage.ErrNotFound) {
+		writeError(w, http.StatusNotFound, err)
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleUnlikeTrack(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.storage.UnlikeTrack(r.Context(), id); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleRecordRecentPlay(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.storage.RecordRecentPlay(r.Context(), id); errors.Is(err, storage.ErrNotFound) {
+		writeError(w, http.StatusNotFound, err)
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) writeTracks(w http.ResponseWriter, r *http.Request, load func() ([]storage.Track, error)) {
+	tracks, err := load()
+	if errors.Is(err, storage.ErrNotFound) {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	response := make([]trackResponse, 0, len(tracks))
+	for _, track := range tracks {
+		response = append(response, trackResponseFromStorage(track))
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func parseID(r *http.Request) (int64, error) {
@@ -257,6 +473,14 @@ type createLibraryRequest struct {
 	Path string `json:"path"`
 }
 
+type playlistRequest struct {
+	Name string `json:"name"`
+}
+
+type playlistTrackRequest struct {
+	TrackID int64 `json:"trackId"`
+}
+
 type librarySummaryResponse struct {
 	RootCount        int64  `json:"rootCount"`
 	TrackCount       int64  `json:"trackCount"`
@@ -290,6 +514,16 @@ type trackResponse struct {
 	Album      string `json:"album"`
 	DurationMS int64  `json:"durationMs"`
 	Format     string `json:"format"`
+	Liked      bool   `json:"liked"`
+}
+
+type playlistResponse struct {
+	ID         int64  `json:"id"`
+	Name       string `json:"name"`
+	Type       string `json:"type"`
+	TrackCount int64  `json:"trackCount"`
+	CreatedAt  string `json:"createdAt"`
+	UpdatedAt  string `json:"updatedAt"`
 }
 
 func libraryResponseFromStorage(library storage.Library) libraryResponse {
@@ -324,5 +558,17 @@ func trackResponseFromStorage(track storage.Track) trackResponse {
 		Album:      track.Album,
 		DurationMS: track.DurationMS,
 		Format:     track.Format,
+		Liked:      track.Liked,
+	}
+}
+
+func playlistResponseFromStorage(playlist storage.Playlist) playlistResponse {
+	return playlistResponse{
+		ID:         playlist.ID,
+		Name:       playlist.Name,
+		Type:       playlist.Type,
+		TrackCount: playlist.TrackCount,
+		CreatedAt:  playlist.CreatedAt,
+		UpdatedAt:  playlist.UpdatedAt,
 	}
 }
