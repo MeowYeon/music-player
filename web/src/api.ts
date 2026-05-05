@@ -33,6 +33,18 @@ export type Track = {
   album: string
   durationMs: number
   format: string
+  liked: boolean
+}
+
+export type PlaylistType = 'normal' | 'liked' | 'recent'
+
+export type Playlist = {
+  id: number
+  name: string
+  type: PlaylistType
+  trackCount: number
+  createdAt: string
+  updatedAt: string
 }
 
 export type CreateLibraryRequest = {
@@ -51,6 +63,7 @@ const mockTracks: Track[] = [
     album: '城市慢拍',
     durationMs: 247000,
     format: 'flac',
+    liked: true,
   },
   {
     id: 2,
@@ -60,6 +73,7 @@ const mockTracks: Track[] = [
     album: 'Quiet Hours',
     durationMs: 312000,
     format: 'mp3',
+    liked: false,
   },
   {
     id: 3,
@@ -69,6 +83,26 @@ const mockTracks: Track[] = [
     album: '日光练习',
     durationMs: 221000,
     format: 'm4a',
+    liked: false,
+  },
+]
+
+const mockPlaylists: Playlist[] = [
+  {
+    id: 11,
+    name: '夜间散步',
+    type: 'normal',
+    trackCount: 2,
+    createdAt: '今天 20:12',
+    updatedAt: '今天 20:12',
+  },
+  {
+    id: 12,
+    name: '写代码用',
+    type: 'normal',
+    trackCount: 1,
+    createdAt: '昨天 22:30',
+    updatedAt: '昨天 22:30',
   },
 ]
 
@@ -213,6 +247,84 @@ export async function getActiveScanTasks(): Promise<ScanTask[]> {
 
 export async function getTracks(query: string): Promise<Track[]> {
   return withMockFallback(() => request<Track[]>(`/api/tracks?q=${encodeURIComponent(query)}`), filterTracks(query))
+}
+
+export async function getPlaylists(): Promise<Playlist[]> {
+  return withMockFallback(() => request<Playlist[]>('/api/playlists'), mockPlaylists)
+}
+
+export async function createPlaylist(name: string): Promise<Playlist> {
+  return withMockFallback(
+    () =>
+      request<Playlist>('/api/playlists', {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      }),
+    {
+      id: Date.now(),
+      name,
+      type: 'normal',
+      trackCount: 0,
+      createdAt: '刚刚',
+      updatedAt: '刚刚',
+    },
+  )
+}
+
+export async function renamePlaylist(playlistId: number, name: string): Promise<Playlist> {
+  return request<Playlist>(`/api/playlists/${playlistId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ name }),
+  })
+}
+
+export async function deletePlaylist(playlistId: number): Promise<void> {
+  await request<void>(`/api/playlists/${playlistId}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function getPlaylistTracks(playlistId: number): Promise<Track[]> {
+  return withMockFallback(() => request<Track[]>(`/api/playlists/${playlistId}/tracks`), mockTracks.slice(0, 2))
+}
+
+export async function getLikedTracks(): Promise<Track[]> {
+  return withMockFallback(() => request<Track[]>('/api/playlists/liked/tracks'), mockTracks.filter((track) => track.liked))
+}
+
+export async function getRecentTracks(): Promise<Track[]> {
+  return withMockFallback(() => request<Track[]>('/api/playlists/recent/tracks'), mockTracks.slice().reverse())
+}
+
+export async function addTrackToPlaylist(playlistId: number, trackId: number): Promise<void> {
+  await request<void>(`/api/playlists/${playlistId}/tracks`, {
+    method: 'POST',
+    body: JSON.stringify({ trackId }),
+  })
+}
+
+export async function removeTrackFromPlaylist(playlistId: number, trackId: number): Promise<void> {
+  await request<void>(`/api/playlists/${playlistId}/tracks/${trackId}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function likeTrack(trackId: number): Promise<void> {
+  await request<void>(`/api/tracks/${trackId}/like`, {
+    method: 'POST',
+  })
+}
+
+export async function unlikeTrack(trackId: number): Promise<void> {
+  await request<void>(`/api/tracks/${trackId}/like`, {
+    method: 'DELETE',
+  })
+}
+
+export async function recordRecentPlay(trackId: number): Promise<void> {
+  await request<void>(`/api/tracks/${trackId}/recent-play`, {
+    method: 'POST',
+  })
 }
 
 export function getTrackStreamUrl(trackId: number): string {

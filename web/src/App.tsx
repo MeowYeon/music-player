@@ -1,12 +1,18 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AudioLines,
   CheckCircle2,
   Clock3,
   FolderOpen,
+  Heart,
+  History,
+  Library,
   ListMusic,
+  ListPlus,
   Pause,
+  PanelLeftClose,
+  PanelLeftOpen,
   Play,
   Plus,
   RefreshCw,
@@ -19,15 +25,23 @@ import {
   XCircle,
 } from 'lucide-react'
 import {
+  createPlaylist,
   createLibrary,
   deleteLibrary,
+  deletePlaylist,
   getActiveScanTasks,
   getLibraries,
   getLibrarySummary,
+  getLikedTracks,
+  getPlaylistTracks,
+  getPlaylists,
+  getRecentTracks,
   getTracks,
   getTrackStreamUrl,
+  renamePlaylist,
   scanLibrary,
   type LibraryItem,
+  type Playlist,
   type ScanStatus,
   type ScanTask,
   type Track,
@@ -35,15 +49,19 @@ import {
 
 const defaultLibraryPath = '/mnt/c/Users/guohp/Music/test'
 type PlaybackStatus = 'idle' | 'loading' | 'playing' | 'paused' | 'ended' | 'error'
-type ViewMode = 'songs' | 'libraries'
+type ViewMode = 'libraries' | 'songs' | 'playlists' | 'liked' | 'recent'
 
 function App() {
   const queryClient = useQueryClient()
   const audioRef = useRef<HTMLAudioElement>(null)
   const previousActiveCountRef = useRef(0)
-  const [view, setView] = useState<ViewMode>('songs')
+  const [view, setView] = useState<ViewMode>('libraries')
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [query, setQuery] = useState('')
   const [libraryQueryText, setLibraryQueryText] = useState('')
+  const [playlistName, setPlaylistName] = useState('')
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | null>(null)
+  const [selectedTrack, setSelectedTrack] = useState<Track | null>(null)
   const [libraryPath, setLibraryPath] = useState(defaultLibraryPath)
   const [libraryFormError, setLibraryFormError] = useState('')
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null)
@@ -70,6 +88,32 @@ function App() {
     queryKey: ['libraries'],
     queryFn: getLibraries,
     refetchInterval: 5000,
+  })
+
+  const playlistsQuery = useQuery({
+    queryKey: ['playlists'],
+    queryFn: getPlaylists,
+    refetchInterval: 10000,
+  })
+
+  const playlistTracksQuery = useQuery({
+    queryKey: ['playlist-tracks', selectedPlaylistId],
+    queryFn: () => getPlaylistTracks(selectedPlaylistId ?? 0),
+    enabled: view === 'playlists' && selectedPlaylistId !== null,
+  })
+
+  const likedTracksQuery = useQuery({
+    queryKey: ['playlist-tracks', 'liked'],
+    queryFn: getLikedTracks,
+    enabled: view === 'liked',
+    refetchInterval: 15000,
+  })
+
+  const recentTracksQuery = useQuery({
+    queryKey: ['playlist-tracks', 'recent'],
+    queryFn: getRecentTracks,
+    enabled: view === 'recent',
+    refetchInterval: 15000,
   })
 
   const rawLibraries = librariesQuery.data ?? []
@@ -125,6 +169,30 @@ function App() {
     },
   })
 
+  const createPlaylistMutation = useMutation({
+    mutationFn: createPlaylist,
+    onSuccess: (playlist) => {
+      setPlaylistName('')
+      setSelectedPlaylistId(playlist.id)
+      queryClient.invalidateQueries({ queryKey: ['playlists'] })
+    },
+  })
+
+  const renamePlaylistMutation = useMutation({
+    mutationFn: ({ playlistId, name }: { playlistId: number; name: string }) => renamePlaylist(playlistId, name),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['playlists'] })
+    },
+  })
+
+  const deletePlaylistMutation = useMutation({
+    mutationFn: deletePlaylist,
+    onSuccess: () => {
+      setSelectedPlaylistId(null)
+      queryClient.invalidateQueries({ queryKey: ['playlists'] })
+    },
+  })
+
   useEffect(() => {
     const activeCount = activeTasks.length
     if (previousActiveCountRef.current > 0 && activeCount === 0) {
@@ -136,6 +204,17 @@ function App() {
   }, [activeTasks.length, queryClient])
 
   const tracks = tracksQuery.data ?? []
+  const playlists = playlistsQuery.data ?? []
+  const selectedPlaylist = playlists.find((playlist) => playlist.id === selectedPlaylistId) ?? null
+  const activePlaylistTracks = playlistTracksQuery.data ?? []
+  const likedTracks = likedTracksQuery.data ?? []
+  const recentTracks = recentTracksQuery.data ?? []
+
+  useEffect(() => {
+    if (selectedPlaylistId === null && playlists.length > 0) {
+      setSelectedPlaylistId(playlists[0].id)
+    }
+  }, [playlists, selectedPlaylistId])
   const filteredLibraries = useMemo(() => {
     const normalized = libraryQueryText.trim().toLowerCase()
     if (!normalized) {
@@ -182,7 +261,33 @@ function App() {
     deleteLibraryMutation.mutate(library.id)
   }
 
+  function handlePlaylistSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const name = playlistName.trim()
+    if (!name) {
+      return
+    }
+    createPlaylistMutation.mutate(name)
+  }
+
+  function handleRenamePlaylist(playlist: Playlist) {
+    const name = window.prompt('输入新的歌单名称', playlist.name)?.trim()
+    if (!name || name === playlist.name) {
+      return
+    }
+    renamePlaylistMutation.mutate({ playlistId: playlist.id, name })
+  }
+
+  function handleDeletePlaylist(playlist: Playlist) {
+    const confirmed = window.confirm(`确定删除歌单「${playlist.name}」吗？\\n\\n这只会删除歌单，不会删除本地音乐文件。`)
+    if (!confirmed) {
+      return
+    }
+    deletePlaylistMutation.mutate(playlist.id)
+  }
+
   function handleSelectTrack(track: Track) {
+    setSelectedTrack(track)
     if (currentTrack?.id === track.id && (playbackStatus === 'loading' || playbackStatus === 'playing')) {
       return
     }
@@ -255,39 +360,43 @@ function App() {
     }
   }
 
+  const topbarTitle = viewTitle(view)
+  const searchValue = view === 'songs' ? query : view === 'libraries' ? libraryQueryText : ''
+  const searchPlaceholder = view === 'songs' ? '搜索标题、艺术家或专辑' : view === 'libraries' ? '搜索媒体库路径' : '当前页面暂无搜索'
+  const canSearch = view === 'songs' || view === 'libraries'
+
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       <aside className="sidebar" aria-label="主导航">
-        <div className="brand-mark">
-          <AudioLines size={24} strokeWidth={2.2} />
+        <div className="sidebar-brand">
+          <div className="brand-mark" title="阿言">
+            <AudioLines size={24} strokeWidth={2.2} />
+          </div>
+          {!isSidebarCollapsed && <strong>阿言</strong>}
+          <button
+            type="button"
+            className="sidebar-toggle"
+            aria-label={isSidebarCollapsed ? '展开侧边栏' : '收起侧边栏'}
+            title={isSidebarCollapsed ? '展开侧边栏' : '收起侧边栏'}
+            onClick={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
+          >
+            {isSidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+          </button>
         </div>
 
         <nav className="nav-list">
-          <button
-            className={`nav-item ${view === 'songs' ? 'active' : ''}`}
-            type="button"
-            aria-label="歌曲"
-            onClick={() => setView('songs')}
-          >
-            <ListMusic size={20} />
-            <span>歌曲</span>
-          </button>
-          <button
-            className={`nav-item ${view === 'libraries' ? 'active' : ''}`}
-            type="button"
-            aria-label="媒体库"
-            onClick={() => setView('libraries')}
-          >
-            <FolderOpen size={20} />
-            <span>媒体库</span>
-          </button>
+          <NavItem collapsed={isSidebarCollapsed} icon={<Library size={20} />} label="媒体库" active={view === 'libraries'} onClick={() => setView('libraries')} />
+          <NavItem collapsed={isSidebarCollapsed} icon={<ListMusic size={20} />} label="歌曲管理" active={view === 'songs'} onClick={() => setView('songs')} />
+          <NavItem collapsed={isSidebarCollapsed} icon={<ListPlus size={20} />} label="歌单管理" active={view === 'playlists'} onClick={() => setView('playlists')} />
+          <NavItem collapsed={isSidebarCollapsed} icon={<Heart size={20} />} label="我喜欢" active={view === 'liked'} onClick={() => setView('liked')} />
+          <NavItem collapsed={isSidebarCollapsed} icon={<History size={20} />} label="最近播放" active={view === 'recent'} onClick={() => setView('recent')} />
         </nav>
       </aside>
 
       <main className="workspace">
         <header className="topbar">
           <div>
-            <h1>{view === 'songs' ? '歌曲' : '媒体库'}</h1>
+            <h1>{topbarTitle}</h1>
             <p>
               {librarySummary}
               <span className={`connection-dot ${librarySummaryQuery.isError ? 'offline' : 'online'}`}>
@@ -296,14 +405,15 @@ function App() {
             </p>
           </div>
 
-          <label className="search-box">
+          <label className={`search-box ${canSearch ? '' : 'disabled'}`}>
             <Search size={18} />
             <input
-              value={view === 'songs' ? query : libraryQueryText}
+              value={searchValue}
+              disabled={!canSearch}
               onChange={(event) => (view === 'songs' ? setQuery(event.target.value) : setLibraryQueryText(event.target.value))}
-              placeholder={view === 'songs' ? '搜索标题、艺术家或专辑' : '搜索媒体库路径'}
+              placeholder={searchPlaceholder}
             />
-            {(view === 'songs' ? query : libraryQueryText) && (
+            {canSearch && searchValue && (
               <button
                 type="button"
                 aria-label="清空搜索"
@@ -318,6 +428,7 @@ function App() {
         {view === 'songs' ? (
           <SongsView
             tracks={tracks}
+            selectedTrack={selectedTrack}
             currentTrack={currentTrack}
             playbackStatus={playbackStatus}
             playerError={playerError}
@@ -326,7 +437,7 @@ function App() {
             query={query}
             onSelectTrack={handleSelectTrack}
           />
-        ) : (
+        ) : view === 'libraries' ? (
           <LibrariesView
             libraries={filteredLibraries}
             libraryPath={libraryPath}
@@ -341,6 +452,54 @@ function App() {
             onSubmit={handleLibrarySubmit}
             onScan={handleScanLibrary}
             onDelete={handleDeleteLibrary}
+          />
+        ) : view === 'playlists' ? (
+          <PlaylistsView
+            playlists={playlists}
+            selectedPlaylist={selectedPlaylist}
+            tracks={activePlaylistTracks}
+            playlistName={playlistName}
+            isLoading={playlistsQuery.isLoading || playlistTracksQuery.isLoading}
+            isError={playlistsQuery.isError || playlistTracksQuery.isError}
+            isCreating={createPlaylistMutation.isPending}
+            isMutating={renamePlaylistMutation.isPending || deletePlaylistMutation.isPending}
+            selectedTrack={selectedTrack}
+            currentTrack={currentTrack}
+            playbackStatus={playbackStatus}
+            onNameChange={setPlaylistName}
+            onSubmit={handlePlaylistSubmit}
+            onSelectPlaylist={setSelectedPlaylistId}
+            onRenamePlaylist={handleRenamePlaylist}
+            onDeletePlaylist={handleDeletePlaylist}
+            onSelectTrack={handleSelectTrack}
+          />
+        ) : view === 'liked' ? (
+          <SystemPlaylistView
+            title="我喜欢"
+            body="收藏过的歌曲会固定出现在这里。"
+            tracks={likedTracks}
+            selectedTrack={selectedTrack}
+            currentTrack={currentTrack}
+            playbackStatus={playbackStatus}
+            isLoading={likedTracksQuery.isLoading}
+            isError={likedTracksQuery.isError}
+            emptyTitle="还没有喜欢的歌曲"
+            emptyBody="在歌曲列表中点亮收藏按钮后，这里会显示它们。"
+            onSelectTrack={handleSelectTrack}
+          />
+        ) : (
+          <SystemPlaylistView
+            title="最近播放"
+            body="歌曲真正开始播放后，会自动更新到这里。"
+            tracks={recentTracks}
+            selectedTrack={selectedTrack}
+            currentTrack={currentTrack}
+            playbackStatus={playbackStatus}
+            isLoading={recentTracksQuery.isLoading}
+            isError={recentTracksQuery.isError}
+            emptyTitle="还没有最近播放"
+            emptyBody="开始播放任意歌曲后，这里会展示最近听过的内容。"
+            onSelectTrack={handleSelectTrack}
           />
         )}
       </main>
@@ -438,8 +597,30 @@ function App() {
   )
 }
 
+function NavItem({
+  icon,
+  label,
+  active,
+  collapsed,
+  onClick,
+}: {
+  icon: ReactNode
+  label: string
+  active: boolean
+  collapsed: boolean
+  onClick: () => void
+}) {
+  return (
+    <button className={`nav-item ${active ? 'active' : ''}`} type="button" aria-label={label} title={label} onClick={onClick}>
+      {icon}
+      {!collapsed && <span>{label}</span>}
+    </button>
+  )
+}
+
 function SongsView({
   tracks,
+  selectedTrack,
   currentTrack,
   playbackStatus,
   playerError,
@@ -449,6 +630,7 @@ function SongsView({
   onSelectTrack,
 }: {
   tracks: Track[]
+  selectedTrack: Track | null
   currentTrack: Track | null
   playbackStatus: PlaybackStatus
   playerError: string
@@ -499,7 +681,7 @@ function SongsView({
               {tracks.map((track) => (
                 <tr
                   key={track.id}
-                  className={trackRowClass(track, currentTrack, playbackStatus)}
+                  className={trackRowClass(track, selectedTrack, currentTrack, playbackStatus)}
                   onClick={() => onSelectTrack(track)}
                 >
                   <td>
@@ -530,6 +712,222 @@ function SongsView({
         )}
       </div>
     </section>
+  )
+}
+
+function PlaylistsView({
+  playlists,
+  selectedPlaylist,
+  tracks,
+  playlistName,
+  isLoading,
+  isError,
+  isCreating,
+  isMutating,
+  selectedTrack,
+  currentTrack,
+  playbackStatus,
+  onNameChange,
+  onSubmit,
+  onSelectPlaylist,
+  onRenamePlaylist,
+  onDeletePlaylist,
+  onSelectTrack,
+}: {
+  playlists: Playlist[]
+  selectedPlaylist: Playlist | null
+  tracks: Track[]
+  playlistName: string
+  isLoading: boolean
+  isError: boolean
+  isCreating: boolean
+  isMutating: boolean
+  selectedTrack: Track | null
+  currentTrack: Track | null
+  playbackStatus: PlaybackStatus
+  onNameChange: (name: string) => void
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void
+  onSelectPlaylist: (id: number) => void
+  onRenamePlaylist: (playlist: Playlist) => void
+  onDeletePlaylist: (playlist: Playlist) => void
+  onSelectTrack: (track: Track) => void
+}) {
+  return (
+    <section className="playlist-page" aria-label="歌单管理">
+      <aside className="playlist-sidebar">
+        <form className="playlist-form" onSubmit={onSubmit}>
+          <label htmlFor="playlist-name">新建歌单</label>
+          <div>
+            <input
+              id="playlist-name"
+              value={playlistName}
+              onChange={(event) => onNameChange(event.target.value)}
+              placeholder="例如：夜间散步"
+              disabled={isCreating}
+            />
+            <button type="submit" disabled={isCreating || !playlistName.trim()} title="创建歌单" aria-label="创建歌单">
+              <Plus size={17} />
+            </button>
+          </div>
+        </form>
+
+        <div className="playlist-list">
+          {playlists.map((playlist) => (
+            <button
+              key={playlist.id}
+              type="button"
+              className={`playlist-item ${selectedPlaylist?.id === playlist.id ? 'active' : ''}`}
+              onClick={() => onSelectPlaylist(playlist.id)}
+            >
+              <span>
+                <strong>{playlist.name}</strong>
+                <small>{playlist.trackCount} 首歌曲</small>
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {!playlists.length && !isLoading && <StateMessage title="还没有普通歌单" body="创建一个歌单后，可以从歌曲行菜单添加歌曲。" />}
+      </aside>
+
+      <div className="playlist-detail">
+        <div className="table-header">
+          <div>
+            <h3>{selectedPlaylist?.name ?? '选择一个歌单'}</h3>
+            <span>{selectedPlaylist ? `${selectedPlaylist.trackCount} 首歌曲 · 按添加时间排序` : '普通歌单不会包含我喜欢和最近播放'}</span>
+          </div>
+          {selectedPlaylist && (
+            <div className="row-actions">
+              <button type="button" onClick={() => onRenamePlaylist(selectedPlaylist)} disabled={isMutating} title="重命名" aria-label="重命名">
+                <RefreshCw size={15} />
+              </button>
+              <button type="button" className="danger" onClick={() => onDeletePlaylist(selectedPlaylist)} disabled={isMutating} title="删除歌单" aria-label="删除歌单">
+                <Trash2 size={15} />
+              </button>
+            </div>
+          )}
+        </div>
+
+        <PlaylistTrackTable
+          tracks={tracks}
+          selectedTrack={selectedTrack}
+          currentTrack={currentTrack}
+          playbackStatus={playbackStatus}
+          onSelectTrack={onSelectTrack}
+        />
+
+        {isLoading && <StateMessage title="正在读取歌单" body="稍等一下，阿言正在同步歌单数据。" />}
+        {isError && <StateMessage title="歌单加载失败" body="请确认后端服务已启动，然后刷新页面。" tone="error" />}
+        {selectedPlaylist && !isLoading && !isError && !tracks.length && <StateMessage title="这个歌单还是空的" body="从歌曲列表的三点菜单中添加歌曲到歌单。" />}
+      </div>
+    </section>
+  )
+}
+
+function SystemPlaylistView({
+  title,
+  body,
+  tracks,
+  selectedTrack,
+  currentTrack,
+  playbackStatus,
+  isLoading,
+  isError,
+  emptyTitle,
+  emptyBody,
+  onSelectTrack,
+}: {
+  title: string
+  body: string
+  tracks: Track[]
+  selectedTrack: Track | null
+  currentTrack: Track | null
+  playbackStatus: PlaybackStatus
+  isLoading: boolean
+  isError: boolean
+  emptyTitle: string
+  emptyBody: string
+  onSelectTrack: (track: Track) => void
+}) {
+  return (
+    <section className="system-playlist-page" aria-label={title}>
+      <div className="now-summary">
+        <div>
+          <span className="eyebrow">系统歌单</span>
+          <h2>{title}</h2>
+          <p>{body}</p>
+        </div>
+        <div className="system-glyph" aria-hidden="true">
+          {title === '我喜欢' ? <Heart size={32} /> : <History size={32} />}
+        </div>
+      </div>
+
+      <div className="table-wrap">
+        <div className="table-header">
+          <h3>{title}</h3>
+          <span>{tracks.length} 首</span>
+        </div>
+        <PlaylistTrackTable
+          tracks={tracks}
+          selectedTrack={selectedTrack}
+          currentTrack={currentTrack}
+          playbackStatus={playbackStatus}
+          onSelectTrack={onSelectTrack}
+        />
+        {isLoading && <StateMessage title="正在读取歌曲" body="稍等一下，阿言正在同步系统歌单。" />}
+        {isError && <StateMessage title="系统歌单加载失败" body="请确认后端服务已启动，然后刷新页面。" tone="error" />}
+        {!isLoading && !isError && !tracks.length && <StateMessage title={emptyTitle} body={emptyBody} />}
+      </div>
+    </section>
+  )
+}
+
+function PlaylistTrackTable({
+  tracks,
+  selectedTrack,
+  currentTrack,
+  playbackStatus,
+  onSelectTrack,
+}: {
+  tracks: Track[]
+  selectedTrack: Track | null
+  currentTrack: Track | null
+  playbackStatus: PlaybackStatus
+  onSelectTrack: (track: Track) => void
+}) {
+  return (
+    <div className="table-scroll">
+      <table className="track-table">
+        <thead>
+          <tr>
+            <th>标题</th>
+            <th>艺术家</th>
+            <th>专辑</th>
+            <th>时长</th>
+            <th>格式</th>
+            <th>路径</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tracks.map((track) => (
+            <tr key={track.id} className={trackRowClass(track, selectedTrack, currentTrack, playbackStatus)} onClick={() => onSelectTrack(track)}>
+              <td>
+                <button type="button" className="track-title">
+                  {track.title}
+                </button>
+              </td>
+              <td className={!track.artist ? 'muted-cell' : undefined}>{displayArtist(track)}</td>
+              <td className={!track.album ? 'muted-cell' : undefined}>{displayAlbum(track)}</td>
+              <td>{formatDuration(track.durationMs)}</td>
+              <td>
+                <span className="format-chip">{track.format}</span>
+              </td>
+              <td className="path-cell">{track.path}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -758,11 +1156,30 @@ function playbackLabel(status: PlaybackStatus) {
   }
 }
 
-function trackRowClass(track: Track, currentTrack: Track | null, status: PlaybackStatus) {
-  if (currentTrack?.id === track.id) {
-    return `selected ${status}`
+function viewTitle(view: ViewMode) {
+  switch (view) {
+    case 'libraries':
+      return '媒体库'
+    case 'songs':
+      return '歌曲管理'
+    case 'playlists':
+      return '歌单管理'
+    case 'liked':
+      return '我喜欢'
+    case 'recent':
+      return '最近播放'
   }
-  return undefined
+}
+
+function trackRowClass(track: Track, selectedTrack: Track | null, currentTrack: Track | null, status: PlaybackStatus) {
+  const classes: string[] = []
+  if (selectedTrack?.id === track.id) {
+    classes.push('selected')
+  }
+  if (currentTrack?.id === track.id) {
+    classes.push('current', status)
+  }
+  return classes.join(' ') || undefined
 }
 
 function errorMessage(error: unknown, fallback: string) {
