@@ -1449,7 +1449,6 @@ function PlaylistTrackTable({
                 </button>
                 {openTrackMenuId === track.id && (
                   <div className="track-menu" onClick={(event) => event.stopPropagation()}>
-                    <strong>添加到歌单</strong>
                     <button type="button" onClick={() => onOpenPlaylistDialog(track)}>
                       添加到歌单
                     </button>
