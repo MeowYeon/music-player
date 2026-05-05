@@ -72,6 +72,11 @@ function App() {
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | null>(null)
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null)
   const [openTrackMenuId, setOpenTrackMenuId] = useState<number | null>(null)
+  const [playlistDialogTrack, setPlaylistDialogTrack] = useState<Track | null>(null)
+  const [playlistDialogPlaylistId, setPlaylistDialogPlaylistId] = useState<number | null>(null)
+  const [playlistDialogName, setPlaylistDialogName] = useState('')
+  const [playlistDialogError, setPlaylistDialogError] = useState('')
+  const [isPlaylistDialogSaving, setIsPlaylistDialogSaving] = useState(false)
   const [queue, setQueue] = useState<Track[]>([])
   const [playMode, setPlayMode] = useState<PlayMode>('sequence')
   const [isQueueOpen, setIsQueueOpen] = useState(false)
@@ -260,6 +265,19 @@ function App() {
       setSelectedPlaylistId(playlists[0].id)
     }
   }, [playlists, selectedPlaylistId])
+
+  useEffect(() => {
+    if (!playlistDialogTrack) {
+      return
+    }
+    if (!playlists.length) {
+      setPlaylistDialogPlaylistId(null)
+      return
+    }
+    if (playlistDialogPlaylistId === null || !playlists.some((playlist) => playlist.id === playlistDialogPlaylistId)) {
+      setPlaylistDialogPlaylistId(playlists[0].id)
+    }
+  }, [playlistDialogPlaylistId, playlistDialogTrack, playlists])
   const filteredLibraries = useMemo(() => {
     const normalized = libraryQueryText.trim().toLowerCase()
     if (!normalized) {
@@ -348,6 +366,75 @@ function App() {
 
   function handleAddTrackToPlaylist(track: Track, playlist: Playlist) {
     addTrackToPlaylistMutation.mutate({ playlistId: playlist.id, trackId: track.id })
+  }
+
+  function handleOpenPlaylistDialog(track: Track) {
+    setSelectedTrack(track)
+    setOpenTrackMenuId(null)
+    setPlaylistDialogTrack(track)
+    setPlaylistDialogPlaylistId(playlists[0]?.id ?? null)
+    setPlaylistDialogName('')
+    setPlaylistDialogError('')
+  }
+
+  function handleClosePlaylistDialog() {
+    if (isPlaylistDialogSaving) {
+      return
+    }
+    setPlaylistDialogTrack(null)
+    setPlaylistDialogPlaylistId(null)
+    setPlaylistDialogName('')
+    setPlaylistDialogError('')
+  }
+
+  function handleConfirmAddToPlaylist() {
+    if (!playlistDialogTrack) {
+      return
+    }
+    if (playlistDialogPlaylistId === null) {
+      setPlaylistDialogError('请选择一个歌单，或新建歌单后添加。')
+      return
+    }
+
+    addTrackToPlaylistMutation.mutate(
+      { playlistId: playlistDialogPlaylistId, trackId: playlistDialogTrack.id },
+      {
+        onSuccess: () => {
+          setPlaylistDialogTrack(null)
+          setPlaylistDialogPlaylistId(null)
+          setPlaylistDialogName('')
+          setPlaylistDialogError('')
+        },
+      },
+    )
+  }
+
+  async function handleCreatePlaylistAndAdd() {
+    if (!playlistDialogTrack) {
+      return
+    }
+    const name = playlistDialogName.trim()
+    if (!name) {
+      setPlaylistDialogError('请输入歌单名称。')
+      return
+    }
+
+    setIsPlaylistDialogSaving(true)
+    setPlaylistDialogError('')
+    try {
+      const playlist = await createPlaylist(name)
+      await addTrackToPlaylist(playlist.id, playlistDialogTrack.id)
+      queryClient.invalidateQueries({ queryKey: ['playlists'] })
+      queryClient.invalidateQueries({ queryKey: ['playlist-tracks'] })
+      setSelectedPlaylistId(playlist.id)
+      setPlaylistDialogTrack(null)
+      setPlaylistDialogPlaylistId(null)
+      setPlaylistDialogName('')
+    } catch (error) {
+      setPlaylistDialogError(errorMessage(error, '创建歌单或添加歌曲失败。'))
+    } finally {
+      setIsPlaylistDialogSaving(false)
+    }
   }
 
   function handleToggleTrackMenu(track: Track) {
@@ -552,7 +639,7 @@ function App() {
             onPlayTrack={handlePlayTrackFromList}
             onToggleLike={handleToggleLike}
             onToggleMenu={handleToggleTrackMenu}
-            onAddTrackToPlaylist={handleAddTrackToPlaylist}
+            onOpenPlaylistDialog={handleOpenPlaylistDialog}
             onPlayNext={handlePlayNext}
             openTrackMenuId={openTrackMenuId}
             playlists={playlists}
@@ -595,7 +682,7 @@ function App() {
             onPlayTrack={handlePlayTrackFromList}
             onToggleLike={handleToggleLike}
             onToggleMenu={handleToggleTrackMenu}
-            onAddTrackToPlaylist={handleAddTrackToPlaylist}
+            onOpenPlaylistDialog={handleOpenPlaylistDialog}
             onPlayNext={handlePlayNext}
             openTrackMenuId={openTrackMenuId}
           />
@@ -615,7 +702,7 @@ function App() {
             onPlayTrack={handlePlayTrackFromList}
             onToggleLike={handleToggleLike}
             onToggleMenu={handleToggleTrackMenu}
-            onAddTrackToPlaylist={handleAddTrackToPlaylist}
+            onOpenPlaylistDialog={handleOpenPlaylistDialog}
             onPlayNext={handlePlayNext}
             openTrackMenuId={openTrackMenuId}
             playlists={playlists}
@@ -636,7 +723,7 @@ function App() {
             onPlayTrack={handlePlayTrackFromList}
             onToggleLike={handleToggleLike}
             onToggleMenu={handleToggleTrackMenu}
-            onAddTrackToPlaylist={handleAddTrackToPlaylist}
+            onOpenPlaylistDialog={handleOpenPlaylistDialog}
             onPlayNext={handlePlayNext}
             openTrackMenuId={openTrackMenuId}
             playlists={playlists}
@@ -769,6 +856,22 @@ function App() {
           onRemoveTrack={handleRemoveQueueTrack}
         />
       )}
+
+      {playlistDialogTrack && (
+        <PlaylistPickerModal
+          track={playlistDialogTrack}
+          playlists={playlists}
+          selectedPlaylistId={playlistDialogPlaylistId}
+          newPlaylistName={playlistDialogName}
+          error={playlistDialogError}
+          isSaving={isPlaylistDialogSaving || addTrackToPlaylistMutation.isPending}
+          onSelectPlaylist={setPlaylistDialogPlaylistId}
+          onNewPlaylistNameChange={setPlaylistDialogName}
+          onConfirm={handleConfirmAddToPlaylist}
+          onCreateAndAdd={handleCreatePlaylistAndAdd}
+          onClose={handleClosePlaylistDialog}
+        />
+      )}
     </div>
   )
 }
@@ -857,6 +960,93 @@ function QueueDrawer({
   )
 }
 
+function PlaylistPickerModal({
+  track,
+  playlists,
+  selectedPlaylistId,
+  newPlaylistName,
+  error,
+  isSaving,
+  onSelectPlaylist,
+  onNewPlaylistNameChange,
+  onConfirm,
+  onCreateAndAdd,
+  onClose,
+}: {
+  track: Track
+  playlists: Playlist[]
+  selectedPlaylistId: number | null
+  newPlaylistName: string
+  error: string
+  isSaving: boolean
+  onSelectPlaylist: (id: number) => void
+  onNewPlaylistNameChange: (name: string) => void
+  onConfirm: () => void
+  onCreateAndAdd: () => void
+  onClose: () => void
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+      <section className="playlist-modal" role="dialog" aria-modal="true" aria-labelledby="playlist-modal-title" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <h2 id="playlist-modal-title">添加到歌单</h2>
+            <p title={track.title}>正在添加：{track.title}</p>
+          </div>
+          <button type="button" aria-label="关闭" title="关闭" onClick={onClose} disabled={isSaving}>
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="playlist-choice-list">
+          {playlists.map((playlist) => (
+            <button
+              key={playlist.id}
+              type="button"
+              className={`playlist-choice ${selectedPlaylistId === playlist.id ? 'selected' : ''}`}
+              onClick={() => onSelectPlaylist(playlist.id)}
+            >
+              <span aria-hidden="true" />
+              <strong>{playlist.name}</strong>
+              <small>{playlist.trackCount} 首歌曲</small>
+            </button>
+          ))}
+          {!playlists.length && <p className="playlist-choice-empty">还没有普通歌单，可以直接新建一个并添加当前歌曲。</p>}
+        </div>
+
+        <div className="modal-divider" />
+
+        <div className="create-playlist-box">
+          <label htmlFor="modal-playlist-name">新建歌单并添加</label>
+          <div>
+            <input
+              id="modal-playlist-name"
+              value={newPlaylistName}
+              onChange={(event) => onNewPlaylistNameChange(event.target.value)}
+              placeholder="输入歌单名称"
+              disabled={isSaving}
+            />
+            <button type="button" onClick={onCreateAndAdd} disabled={isSaving || !newPlaylistName.trim()}>
+              创建并添加
+            </button>
+          </div>
+        </div>
+
+        {error && <p className="modal-error">{error}</p>}
+
+        <div className="modal-actions">
+          <button type="button" className="secondary-button" onClick={onClose} disabled={isSaving}>
+            取消
+          </button>
+          <button type="button" className="primary-button" onClick={onConfirm} disabled={isSaving || selectedPlaylistId === null}>
+            添加到选中歌单
+          </button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
 function SongsView({
   tracks,
   selectedTrack,
@@ -870,7 +1060,7 @@ function SongsView({
   onPlayTrack,
   onToggleLike,
   onToggleMenu,
-  onAddTrackToPlaylist,
+  onOpenPlaylistDialog,
   onPlayNext,
   openTrackMenuId,
   playlists,
@@ -887,7 +1077,7 @@ function SongsView({
   onPlayTrack: (track: Track) => void
   onToggleLike: (track: Track) => void
   onToggleMenu: (track: Track) => void
-  onAddTrackToPlaylist: (track: Track, playlist: Playlist) => void
+  onOpenPlaylistDialog: (track: Track) => void
   onPlayNext: (track: Track) => void
   openTrackMenuId: number | null
   playlists: Playlist[]
@@ -927,7 +1117,7 @@ function SongsView({
           onPlayTrack={onPlayTrack}
           onToggleLike={onToggleLike}
           onToggleMenu={onToggleMenu}
-          onAddTrackToPlaylist={onAddTrackToPlaylist}
+          onOpenPlaylistDialog={onOpenPlaylistDialog}
           onPlayNext={onPlayNext}
           openTrackMenuId={openTrackMenuId}
           playlists={playlists}
@@ -967,7 +1157,7 @@ function PlaylistsView({
   onPlayTrack,
   onToggleLike,
   onToggleMenu,
-  onAddTrackToPlaylist,
+  onOpenPlaylistDialog,
   onPlayNext,
   openTrackMenuId,
 }: {
@@ -991,7 +1181,7 @@ function PlaylistsView({
   onPlayTrack: (track: Track) => void
   onToggleLike: (track: Track) => void
   onToggleMenu: (track: Track) => void
-  onAddTrackToPlaylist: (track: Track, playlist: Playlist) => void
+  onOpenPlaylistDialog: (track: Track) => void
   onPlayNext: (track: Track) => void
   openTrackMenuId: number | null
 }) {
@@ -1060,7 +1250,7 @@ function PlaylistsView({
           onPlayTrack={onPlayTrack}
           onToggleLike={onToggleLike}
           onToggleMenu={onToggleMenu}
-          onAddTrackToPlaylist={onAddTrackToPlaylist}
+          onOpenPlaylistDialog={onOpenPlaylistDialog}
           onPlayNext={onPlayNext}
           openTrackMenuId={openTrackMenuId}
           playlists={playlists}
@@ -1089,7 +1279,7 @@ function SystemPlaylistView({
   onPlayTrack,
   onToggleLike,
   onToggleMenu,
-  onAddTrackToPlaylist,
+  onOpenPlaylistDialog,
   onPlayNext,
   openTrackMenuId,
   playlists,
@@ -1108,7 +1298,7 @@ function SystemPlaylistView({
   onPlayTrack: (track: Track) => void
   onToggleLike: (track: Track) => void
   onToggleMenu: (track: Track) => void
-  onAddTrackToPlaylist: (track: Track, playlist: Playlist) => void
+  onOpenPlaylistDialog: (track: Track) => void
   onPlayNext: (track: Track) => void
   openTrackMenuId: number | null
   playlists: Playlist[]
@@ -1140,7 +1330,7 @@ function SystemPlaylistView({
           onPlayTrack={onPlayTrack}
           onToggleLike={onToggleLike}
           onToggleMenu={onToggleMenu}
-          onAddTrackToPlaylist={onAddTrackToPlaylist}
+          onOpenPlaylistDialog={onOpenPlaylistDialog}
           onPlayNext={onPlayNext}
           openTrackMenuId={openTrackMenuId}
           playlists={playlists}
@@ -1162,7 +1352,7 @@ function PlaylistTrackTable({
   onPlayTrack,
   onToggleLike,
   onToggleMenu,
-  onAddTrackToPlaylist,
+  onOpenPlaylistDialog,
   onPlayNext,
   openTrackMenuId,
   playlists,
@@ -1175,7 +1365,7 @@ function PlaylistTrackTable({
   onPlayTrack: (track: Track) => void
   onToggleLike: (track: Track) => void
   onToggleMenu: (track: Track) => void
-  onAddTrackToPlaylist: (track: Track, playlist: Playlist) => void
+  onOpenPlaylistDialog: (track: Track) => void
   onPlayNext: (track: Track) => void
   openTrackMenuId: number | null
   playlists: Playlist[]
@@ -1260,15 +1450,9 @@ function PlaylistTrackTable({
                 {openTrackMenuId === track.id && (
                   <div className="track-menu" onClick={(event) => event.stopPropagation()}>
                     <strong>添加到歌单</strong>
-                    {playlists.length ? (
-                      playlists.map((playlist) => (
-                        <button key={playlist.id} type="button" onClick={() => onAddTrackToPlaylist(track, playlist)}>
-                          {playlist.name}
-                        </button>
-                      ))
-                    ) : (
-                      <span>暂无普通歌单</span>
-                    )}
+                    <button type="button" onClick={() => onOpenPlaylistDialog(track)}>
+                      添加到歌单
+                    </button>
                     <button type="button" onClick={() => onPlayNext(track)}>
                       下一首播放
                     </button>

@@ -484,19 +484,13 @@ button {
   right: 12px;
   top: 46px;
   display: grid;
-  min-width: 180px;
+  min-width: 150px;
   gap: 4px;
   border: 1px solid #dfe8df;
   border-radius: 8px;
   background: #fff;
   box-shadow: 0 18px 40px rgba(63, 84, 76, 0.16);
   padding: 8px;
-}
-
-.track-menu strong {
-  color: #71807a;
-  font-size: 12px;
-  padding: 5px 8px;
 }
 
 .track-menu button,
@@ -518,6 +512,196 @@ button {
 
 .track-menu span {
   color: #87918d;
+}
+
+.modal-backdrop {
+  position: fixed;
+  z-index: 10;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(38, 49, 47, 0.22);
+  padding: 22px;
+}
+
+.playlist-modal {
+  width: min(460px, 100%);
+  border: 1px solid #dfe8df;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 24px 70px rgba(43, 63, 56, 0.2);
+  padding: 20px;
+}
+
+.modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.modal-header p {
+  max-width: 350px;
+  margin: 6px 0 0;
+  overflow: hidden;
+  color: #6b7471;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modal-header button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: #edf2ee;
+  color: #66716e;
+}
+
+.playlist-choice-list {
+  display: grid;
+  gap: 8px;
+  max-height: 230px;
+  margin-top: 18px;
+  overflow: auto;
+}
+
+.playlist-choice {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #e3e9e2;
+  border-radius: 8px;
+  background: #fbfcf9;
+  color: #26312f;
+  padding: 11px 12px;
+  text-align: left;
+}
+
+.playlist-choice > span {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border: 1px solid #b8c7c0;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.playlist-choice.selected {
+  border-color: #9bd8c8;
+  background: #eaf8f3;
+}
+
+.playlist-choice.selected > span {
+  border: 5px solid #20a783;
+}
+
+.playlist-choice strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playlist-choice small {
+  color: #75807b;
+  font-size: 12px;
+}
+
+.playlist-choice-empty {
+  margin: 0;
+  border: 1px dashed #d8e2db;
+  border-radius: 8px;
+  color: #71807a;
+  font-size: 13px;
+  padding: 14px;
+}
+
+.modal-divider {
+  height: 1px;
+  background: #edf0eb;
+  margin: 18px 0;
+}
+
+.create-playlist-box {
+  display: grid;
+  gap: 8px;
+}
+
+.create-playlist-box label {
+  color: #56625d;
+  font-size: 13px;
+  font-weight: 720;
+}
+
+.create-playlist-box div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.create-playlist-box input {
+  height: 40px;
+  min-width: 0;
+  border: 1px solid #dce5dc;
+  border-radius: 8px;
+  outline: 0;
+  background: #fbfcf9;
+  color: #26312f;
+  padding: 0 12px;
+}
+
+.create-playlist-box button,
+.modal-actions .primary-button,
+.modal-actions .secondary-button {
+  display: inline-flex;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 8px;
+  font-weight: 760;
+  padding: 0 14px;
+}
+
+.create-playlist-box button,
+.modal-actions .primary-button {
+  background: #20a783;
+  color: #fff;
+}
+
+.modal-actions .secondary-button {
+  background: #edf2ee;
+  color: #3d4945;
+}
+
+.create-playlist-box button:disabled,
+.modal-actions button:disabled,
+.modal-header button:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
+
+.modal-error {
+  margin: 12px 0 0;
+  color: #bd4e36;
+  font-size: 13px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
 }
 
 .muted-cell {
