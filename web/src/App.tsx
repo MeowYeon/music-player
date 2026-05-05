@@ -17,7 +17,9 @@ import {
   Play,
   Plus,
   RefreshCw,
+  Repeat,
   Search,
+  Shuffle,
   SkipBack,
   SkipForward,
   Trash2,
@@ -41,6 +43,7 @@ import {
   getTracks,
   getTrackStreamUrl,
   likeTrack,
+  recordRecentPlay,
   renamePlaylist,
   scanLibrary,
   unlikeTrack,
@@ -54,11 +57,13 @@ import {
 const defaultLibraryPath = '/mnt/c/Users/guohp/Music/test'
 type PlaybackStatus = 'idle' | 'loading' | 'playing' | 'paused' | 'ended' | 'error'
 type ViewMode = 'libraries' | 'songs' | 'playlists' | 'liked' | 'recent'
+type PlayMode = 'sequence' | 'loop' | 'shuffle'
 
 function App() {
   const queryClient = useQueryClient()
   const audioRef = useRef<HTMLAudioElement>(null)
   const previousActiveCountRef = useRef(0)
+  const lastRecordedTrackIdRef = useRef<number | null>(null)
   const [view, setView] = useState<ViewMode>('libraries')
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [query, setQuery] = useState('')
@@ -67,6 +72,9 @@ function App() {
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | null>(null)
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null)
   const [openTrackMenuId, setOpenTrackMenuId] = useState<number | null>(null)
+  const [queue, setQueue] = useState<Track[]>([])
+  const [playMode, setPlayMode] = useState<PlayMode>('sequence')
+  const [isQueueOpen, setIsQueueOpen] = useState(false)
   const [libraryPath, setLibraryPath] = useState(defaultLibraryPath)
   const [libraryFormError, setLibraryFormError] = useState('')
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null)
@@ -215,6 +223,13 @@ function App() {
     },
   })
 
+  const recordRecentPlayMutation = useMutation({
+    mutationFn: recordRecentPlay,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['playlist-tracks', 'recent'] })
+    },
+  })
+
   useEffect(() => {
     const activeCount = activeTasks.length
     if (previousActiveCountRef.current > 0 && activeCount === 0) {
@@ -245,9 +260,9 @@ function App() {
     return libraries.filter((library) => library.path.toLowerCase().includes(normalized))
   }, [libraries, libraryQueryText])
 
-  const currentIndex = currentTrack ? tracks.findIndex((track) => track.id === currentTrack.id) : -1
-  const canUsePrevious = tracks.length > 0 && currentIndex > 0
-  const canUseNext = tracks.length > 0 && currentIndex >= 0 && currentIndex < tracks.length - 1
+  const queueIndex = currentTrack ? queue.findIndex((track) => track.id === currentTrack.id) : -1
+  const canUsePrevious = queue.length > 0 && queueIndex > 0
+  const canUseNext = queue.length > 0 && (playMode === 'loop' || playMode === 'shuffle' || (queueIndex >= 0 && queueIndex < queue.length - 1))
   const playerDuration = duration || (currentTrack?.durationMs ? currentTrack.durationMs / 1000 : 0)
   const isPlaying = playbackStatus === 'playing'
   const showPauseButton = playbackStatus === 'loading' || playbackStatus === 'playing'
@@ -315,6 +330,7 @@ function App() {
   function handlePlayTrackFromList(track: Track) {
     setSelectedTrack(track)
     setOpenTrackMenuId(null)
+    setQueue((items) => [track, ...items.filter((item) => item.id !== track.id)])
     playTrack(track)
   }
 
@@ -333,6 +349,14 @@ function App() {
   function handlePlayNext(track: Track) {
     setSelectedTrack(track)
     setOpenTrackMenuId(null)
+    setQueue((items) => {
+      const withoutTrack = items.filter((item) => item.id !== track.id)
+      const currentQueueIndex = currentTrack ? withoutTrack.findIndex((item) => item.id === currentTrack.id) : -1
+      if (currentQueueIndex < 0) {
+        return [...withoutTrack, track]
+      }
+      return [...withoutTrack.slice(0, currentQueueIndex + 1), track, ...withoutTrack.slice(currentQueueIndex + 1)]
+    })
   }
 
   function playTrack(track: Track) {
@@ -341,6 +365,7 @@ function App() {
     setPlayerError('')
     setCurrentTime(0)
     setDuration(0)
+    lastRecordedTrackIdRef.current = null
 
     window.setTimeout(() => {
       audioRef.current?.play().catch(() => {
@@ -351,11 +376,12 @@ function App() {
   }
 
   function handleTogglePlayback() {
-    const track = currentTrack ?? tracks[0]
+    const track = currentTrack ?? queue[0] ?? tracks[0]
     if (!track) {
       return
     }
     if (!currentTrack) {
+      setQueue((items) => (items.some((item) => item.id === track.id) ? items : [track, ...items]))
       playTrack(track)
       return
     }
@@ -376,15 +402,53 @@ function App() {
   }
 
   function handlePreviousTrack() {
-    if (canUsePrevious) {
-      playTrack(tracks[currentIndex - 1])
+    if (queueIndex > 0) {
+      playTrack(queue[queueIndex - 1])
     }
   }
 
   function handleNextTrack() {
-    if (canUseNext) {
-      playTrack(tracks[currentIndex + 1])
+    const nextTrack = nextQueueTrack()
+    if (nextTrack) {
+      playTrack(nextTrack)
     }
+  }
+
+  function handlePlayModeToggle() {
+    setPlayMode((mode) => (mode === 'sequence' ? 'loop' : mode === 'loop' ? 'shuffle' : 'sequence'))
+  }
+
+  function handleRemoveQueueTrack(track: Track) {
+    setQueue((items) => items.filter((item) => item.id !== track.id || item.id === currentTrack?.id))
+  }
+
+  function nextQueueTrack() {
+    if (!queue.length) {
+      return null
+    }
+    const index = currentTrack ? queue.findIndex((track) => track.id === currentTrack.id) : -1
+    if (playMode === 'shuffle') {
+      if (queue.length === 1) {
+        return queue[0]
+      }
+      const candidates = queue.filter((track) => track.id !== currentTrack?.id)
+      return candidates[Math.floor(Math.random() * candidates.length)] ?? null
+    }
+    if (index >= 0 && index < queue.length - 1) {
+      return queue[index + 1]
+    }
+    if (playMode === 'loop') {
+      return queue[0]
+    }
+    return null
+  }
+
+  function recordCurrentTrackPlay() {
+    if (!currentTrack || lastRecordedTrackIdRef.current === currentTrack.id) {
+      return
+    }
+    lastRecordedTrackIdRef.current = currentTrack.id
+    recordRecentPlayMutation.mutate(currentTrack.id)
   }
 
   function handleSeek(value: number) {
@@ -610,27 +674,43 @@ function App() {
           <span>{formatDurationSeconds(playerDuration)}</span>
         </div>
 
-        <div className="volume-popover-wrap">
-          {isVolumeOpen && (
-            <div className="volume-popover">
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={volume}
-                onChange={(event) => handleVolumeChange(Number(event.target.value))}
-                aria-label="音量"
-              />
-            </div>
-          )}
+        <button type="button" className="player-mode-button" onClick={handlePlayModeToggle} aria-label={playModeLabel(playMode)} title={playModeLabel(playMode)}>
+          {playMode === 'shuffle' ? <Shuffle size={17} /> : <Repeat size={17} />}
+          <span>{playModeLabel(playMode)}</span>
+        </button>
+
+        <div className="player-right-tools">
+          <div className="volume-popover-wrap">
+            {isVolumeOpen && (
+              <div className="volume-popover">
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={volume}
+                  onChange={(event) => handleVolumeChange(Number(event.target.value))}
+                  aria-label="音量"
+                />
+              </div>
+            )}
+            <button
+              type="button"
+              className="volume-button"
+              aria-label="音量"
+              title="音量"
+              onClick={() => setIsVolumeOpen((open) => !open)}
+            >
+              <Volume2 size={18} />
+            </button>
+          </div>
           <button
             type="button"
-            className="volume-button"
-            aria-label="音量"
-            title="音量"
-            onClick={() => setIsVolumeOpen((open) => !open)}
+            className={`queue-button ${isQueueOpen ? 'active' : ''}`}
+            aria-label="播放队列"
+            title="播放队列"
+            onClick={() => setIsQueueOpen((open) => !open)}
           >
-            <Volume2 size={18} />
+            <ListMusic size={18} />
           </button>
         </div>
 
@@ -648,12 +728,20 @@ function App() {
             setDuration(Number.isFinite(nextDuration) ? nextDuration : 0)
           }}
           onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
-          onPlaying={() => setPlaybackStatus('playing')}
+          onPlaying={() => {
+            setPlaybackStatus('playing')
+            recordCurrentTrackPlay()
+          }}
           onPause={() => setPlaybackStatus((status) => (status === 'ended' || status === 'error' ? status : 'paused'))}
           onWaiting={() => setPlaybackStatus('loading')}
           onEnded={() => {
-            setPlaybackStatus('ended')
             setCurrentTime(0)
+            const nextTrack = nextQueueTrack()
+            if (nextTrack) {
+              playTrack(nextTrack)
+              return
+            }
+            setPlaybackStatus('ended')
           }}
           onError={() => {
             setPlaybackStatus('error')
@@ -661,6 +749,18 @@ function App() {
           }}
         />
       </footer>
+
+      {isQueueOpen && (
+        <QueueDrawer
+          queue={queue}
+          currentTrack={currentTrack}
+          playbackStatus={playbackStatus}
+          playMode={playMode}
+          onClose={() => setIsQueueOpen(false)}
+          onPlayTrack={handlePlayTrackFromList}
+          onRemoveTrack={handleRemoveQueueTrack}
+        />
+      )}
     </div>
   )
 }
@@ -683,6 +783,69 @@ function NavItem({
       {icon}
       {!collapsed && <span>{label}</span>}
     </button>
+  )
+}
+
+function QueueDrawer({
+  queue,
+  currentTrack,
+  playbackStatus,
+  playMode,
+  onClose,
+  onPlayTrack,
+  onRemoveTrack,
+}: {
+  queue: Track[]
+  currentTrack: Track | null
+  playbackStatus: PlaybackStatus
+  playMode: PlayMode
+  onClose: () => void
+  onPlayTrack: (track: Track) => void
+  onRemoveTrack: (track: Track) => void
+}) {
+  const upcoming = currentTrack ? queue.filter((track) => track.id !== currentTrack.id) : queue
+  return (
+    <aside className="queue-drawer" aria-label="播放队列">
+      <div className="queue-header">
+        <div>
+          <h2>播放队列</h2>
+          <p>{queue.length} 首 · {playModeLabel(playMode)}</p>
+        </div>
+        <button type="button" onClick={onClose} aria-label="关闭播放队列" title="关闭">
+          <X size={18} />
+        </button>
+      </div>
+
+      <section className="queue-section">
+        <span className="eyebrow">当前播放</span>
+        {currentTrack ? (
+          <button type="button" className="queue-track current" onClick={() => onPlayTrack(currentTrack)}>
+            <strong>{currentTrack.title}</strong>
+            <small>{displayArtist(currentTrack)} · {playbackLabel(playbackStatus)}</small>
+          </button>
+        ) : (
+          <p className="queue-empty">还没有选择歌曲</p>
+        )}
+      </section>
+
+      <section className="queue-section">
+        <span className="eyebrow">接下来</span>
+        <div className="queue-list">
+          {upcoming.map((track) => (
+            <div className="queue-track-row" key={track.id}>
+              <button type="button" className="queue-track" onClick={() => onPlayTrack(track)}>
+                <strong>{track.title}</strong>
+                <small>{displayArtist(track)} · {formatDuration(track.durationMs)}</small>
+              </button>
+              <button type="button" aria-label="移出队列" title="移出队列" onClick={() => onRemoveTrack(track)}>
+                <X size={15} />
+              </button>
+            </div>
+          ))}
+          {!upcoming.length && <p className="queue-empty">没有后续歌曲</p>}
+        </div>
+      </section>
+    </aside>
   )
 }
 
@@ -1334,6 +1497,17 @@ function playbackLabel(status: PlaybackStatus) {
       return '播放失败'
     case 'idle':
       return '待播放'
+  }
+}
+
+function playModeLabel(mode: PlayMode) {
+  switch (mode) {
+    case 'sequence':
+      return '顺序播放'
+    case 'loop':
+      return '列表循环'
+    case 'shuffle':
+      return '随机播放'
   }
 }
 
