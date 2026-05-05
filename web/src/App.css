@@ -929,6 +929,7 @@ button {
 
 .volume-popover {
   position: absolute;
+  z-index: 5;
   right: 50%;
   bottom: 48px;
   display: grid;
@@ -943,9 +944,11 @@ button {
 }
 
 .volume-popover input {
-  width: 112px;
+  width: 24px;
+  height: 112px;
   accent-color: #20a783;
-  transform: rotate(-90deg);
+  direction: rtl;
+  writing-mode: vertical-lr;
 }
 
 @media (max-width: 1120px) {
