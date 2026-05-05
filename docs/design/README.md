@@ -8,7 +8,11 @@
 
 - [架构设计](./architecture.md)
 - [界面设计](./ui.md)
+- [v0.3 数据库设计](./v0.3-database.md)
+- [v0.3 UI 设计](./v0.3-ui.md)
 - [MVP 界面图](./ayan-ui-mvp.png)
+- [v0.3 媒体库页](./ayan-v0.3-libraries.png)
+- [v0.3 歌曲页](./ayan-v0.3-songs.png)
 
 ## MVP 关键词
 
@@ -19,5 +23,4 @@
 - 递归扫描
 - 忽略隐藏文件
 - 底部唯一播放器
-- 右侧扫描任务管理
-
+- 媒体库管理与扫描状态
