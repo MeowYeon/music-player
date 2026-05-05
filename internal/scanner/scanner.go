@@ -13,18 +13,18 @@ import (
 	"ayan/internal/storage"
 )
 
+const unchangedMessage = "媒体库已是最新，无需重新导入"
+
 type Store interface {
-	UpsertLibraryRoot(ctx context.Context, path string) (storage.LibraryRoot, error)
-	CreateScanJob(ctx context.Context, rootID int64, path string) (storage.ScanJob, error)
-	MarkScanJobRunning(ctx context.Context, jobID int64, totalFiles int64) error
-	UpdateScanJobProgress(ctx context.Context, jobID int64, scannedFiles int64) error
-	CountTracksByRoot(ctx context.Context, rootID int64) (int64, error)
-	CountUnknownDurationTracksByRoot(ctx context.Context, rootID int64) (int64, error)
-	ReplaceTracksForRoot(ctx context.Context, rootID int64, tracks []storage.TrackInput) error
-	MarkScanJobCompleted(ctx context.Context, jobID int64) error
-	MarkScanJobCompletedWithMessage(ctx context.Context, jobID int64, totalFiles int64, message string) error
-	MarkScanJobFailed(ctx context.Context, jobID int64, message string) error
-	TouchLibraryRootScannedAt(ctx context.Context, id int64) error
+	GetLibrary(ctx context.Context, id int64) (storage.Library, error)
+	StartScanTask(ctx context.Context, libraryID int64) (storage.ScanTask, error)
+	MarkScanTaskRunning(ctx context.Context, libraryID int64, totalFiles int64) error
+	UpdateScanTaskProgress(ctx context.Context, libraryID int64, scannedFiles int64) error
+	CountMusicByLibrary(ctx context.Context, libraryID int64) (int64, error)
+	CountUnknownDurationMusicByLibrary(ctx context.Context, libraryID int64) (int64, error)
+	ReplaceMusicForLibrary(ctx context.Context, libraryID int64, tracks []storage.MusicInput) error
+	MarkScanTaskCompleted(ctx context.Context, libraryID int64, totalFiles int64, message string) error
+	MarkScanTaskFailed(ctx context.Context, libraryID int64, message string) error
 }
 
 type Service struct {
@@ -39,83 +39,77 @@ func New(store Store, log *slog.Logger) *Service {
 	return &Service{store: store, log: log}
 }
 
-func (s *Service) Start(ctx context.Context, path string) (storage.ScanJob, error) {
-	cleanPath, err := validateDirectory(path)
+func (s *Service) Start(ctx context.Context, libraryID int64) (storage.ScanTask, error) {
+	library, err := s.store.GetLibrary(ctx, libraryID)
 	if err != nil {
-		return storage.ScanJob{}, err
+		return storage.ScanTask{}, err
+	}
+	if _, err := validateDirectory(library.Path); err != nil {
+		return storage.ScanTask{}, err
 	}
 
-	root, err := s.store.UpsertLibraryRoot(ctx, cleanPath)
+	task, err := s.store.StartScanTask(ctx, library.ID)
 	if err != nil {
-		return storage.ScanJob{}, fmt.Errorf("save library root: %w", err)
+		return storage.ScanTask{}, err
 	}
 
-	job, err := s.store.CreateScanJob(ctx, root.ID, cleanPath)
-	if err != nil {
-		return storage.ScanJob{}, fmt.Errorf("create scan job: %w", err)
-	}
+	go s.run(context.Background(), library)
 
-	go s.run(context.Background(), root, job)
-
-	return job, nil
+	return task, nil
 }
 
-func (s *Service) run(ctx context.Context, root storage.LibraryRoot, job storage.ScanJob) {
-	files, newestModTime, err := collectAudioFiles(root.Path)
+func (s *Service) run(ctx context.Context, library storage.Library) {
+	files, newestModTime, err := collectAudioFiles(library.Path)
 	if err != nil {
-		s.fail(ctx, job.ID, err)
+		s.fail(ctx, library.ID, err)
 		return
 	}
 
-	unchanged, err := s.isUnchanged(ctx, root, int64(len(files)), newestModTime)
+	unchanged, err := s.isUnchanged(ctx, library, int64(len(files)), newestModTime)
 	if err != nil {
-		s.fail(ctx, job.ID, err)
+		s.fail(ctx, library.ID, err)
 		return
 	}
 	if unchanged {
-		if err := s.store.MarkScanJobCompletedWithMessage(ctx, job.ID, int64(len(files)), "源数据目录没有变动"); err != nil {
-			s.fail(ctx, job.ID, err)
+		if err := s.store.MarkScanTaskCompleted(ctx, library.ID, int64(len(files)), unchangedMessage); err != nil {
+			s.fail(ctx, library.ID, err)
 		}
 		return
 	}
 
-	if err := s.store.MarkScanJobRunning(ctx, job.ID, int64(len(files))); err != nil {
-		s.fail(ctx, job.ID, err)
+	if err := s.store.MarkScanTaskRunning(ctx, library.ID, int64(len(files))); err != nil {
+		s.fail(ctx, library.ID, err)
 		return
 	}
 
-	tracks := make([]storage.TrackInput, 0, len(files))
+	tracks := make([]storage.MusicInput, 0, len(files))
 	for i, file := range files {
-		track, err := buildTrack(root.ID, file)
+		track, err := buildTrack(file)
 		if err != nil {
 			s.log.Warn("skip unreadable audio file", "path", file, "error", err)
 		} else {
 			tracks = append(tracks, track)
 		}
 
-		if err := s.store.UpdateScanJobProgress(ctx, job.ID, int64(i+1)); err != nil {
-			s.fail(ctx, job.ID, err)
+		if err := s.store.UpdateScanTaskProgress(ctx, library.ID, int64(i+1)); err != nil {
+			s.fail(ctx, library.ID, err)
 			return
 		}
 	}
 
-	if err := s.store.ReplaceTracksForRoot(ctx, root.ID, tracks); err != nil {
-		s.fail(ctx, job.ID, fmt.Errorf("replace tracks: %w", err))
+	if err := s.store.ReplaceMusicForLibrary(ctx, library.ID, tracks); err != nil {
+		s.fail(ctx, library.ID, fmt.Errorf("replace music: %w", err))
 		return
 	}
-	if err := s.store.TouchLibraryRootScannedAt(ctx, root.ID); err != nil {
-		s.fail(ctx, job.ID, err)
-		return
-	}
-	if err := s.store.MarkScanJobCompleted(ctx, job.ID); err != nil {
-		s.log.Error("mark scan completed", "job_id", job.ID, "error", err)
+	if err := s.store.MarkScanTaskCompleted(ctx, library.ID, int64(len(files)), "扫描完成"); err != nil {
+		s.log.Error("mark scan completed", "library_id", library.ID, "error", err)
 	}
 }
 
-func (s *Service) fail(ctx context.Context, jobID int64, err error) {
-	s.log.Error("scan failed", "job_id", jobID, "error", err)
-	if markErr := s.store.MarkScanJobFailed(ctx, jobID, err.Error()); markErr != nil {
-		s.log.Error("mark scan failed", "job_id", jobID, "error", markErr)
+func (s *Service) fail(ctx context.Context, libraryID int64, err error) {
+	s.log.Error("scan failed", "library_id", libraryID, "error", err)
+	if markErr := s.store.MarkScanTaskFailed(ctx, libraryID, err.Error()); markErr != nil {
+		s.log.Error("mark scan failed", "library_id", libraryID, "error", markErr)
 	}
 }
 
@@ -147,24 +141,24 @@ func validateDirectory(path string) (string, error) {
 	return cleanPath, nil
 }
 
-func (s *Service) isUnchanged(ctx context.Context, root storage.LibraryRoot, fileCount int64, newestModTime time.Time) (bool, error) {
-	if root.LastScannedAt == "" {
+func (s *Service) isUnchanged(ctx context.Context, library storage.Library, fileCount int64, newestModTime time.Time) (bool, error) {
+	if library.Scan.CompletedAt == "" || library.Scan.Status != "completed" {
 		return false, nil
 	}
 
-	lastScannedAt, err := time.Parse(time.RFC3339Nano, root.LastScannedAt)
+	completedAt, err := time.Parse(time.RFC3339Nano, library.Scan.CompletedAt)
 	if err != nil {
 		return false, nil
 	}
 
-	trackCount, err := s.store.CountTracksByRoot(ctx, root.ID)
+	trackCount, err := s.store.CountMusicByLibrary(ctx, library.ID)
 	if err != nil {
 		return false, err
 	}
 	if trackCount != fileCount {
 		return false, nil
 	}
-	unknownDurations, err := s.store.CountUnknownDurationTracksByRoot(ctx, root.ID)
+	unknownDurations, err := s.store.CountUnknownDurationMusicByLibrary(ctx, library.ID)
 	if err != nil {
 		return false, err
 	}
@@ -174,7 +168,7 @@ func (s *Service) isUnchanged(ctx context.Context, root storage.LibraryRoot, fil
 	if newestModTime.IsZero() {
 		return true, nil
 	}
-	return !newestModTime.After(lastScannedAt), nil
+	return !newestModTime.After(completedAt), nil
 }
 
 func collectAudioFiles(root string) ([]string, time.Time, error) {
@@ -207,10 +201,10 @@ func collectAudioFiles(root string) ([]string, time.Time, error) {
 	return files, newestModTime, err
 }
 
-func buildTrack(rootID int64, path string) (storage.TrackInput, error) {
+func buildTrack(path string) (storage.MusicInput, error) {
 	info, err := os.Stat(path)
 	if err != nil {
-		return storage.TrackInput{}, err
+		return storage.MusicInput{}, err
 	}
 
 	meta, err := metadata.Read(path)
@@ -223,8 +217,7 @@ func buildTrack(rootID int64, path string) (storage.TrackInput, error) {
 		title = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 	}
 
-	return storage.TrackInput{
-		RootID:     rootID,
+	return storage.MusicInput{
 		Path:       path,
 		Title:      title,
 		Artist:     strings.TrimSpace(meta.Artist),

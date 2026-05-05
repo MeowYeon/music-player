@@ -1,16 +1,26 @@
 PRAGMA foreign_keys = ON;
 
-CREATE TABLE IF NOT EXISTS library_roots (
+CREATE TABLE IF NOT EXISTS libraries (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   path TEXT NOT NULL UNIQUE,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  last_scanned_at TEXT
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
-CREATE TABLE IF NOT EXISTS tracks (
+CREATE TABLE IF NOT EXISTS scan_tasks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  root_id INTEGER NOT NULL,
-  path TEXT NOT NULL,
+  library_id INTEGER NOT NULL UNIQUE,
+  status TEXT NOT NULL CHECK (status IN ('idle', 'waiting', 'running', 'completed', 'failed')),
+  total_files INTEGER NOT NULL DEFAULT 0,
+  scanned_files INTEGER NOT NULL DEFAULT 0,
+  message TEXT NOT NULL DEFAULT '',
+  completed_at TEXT,
+  FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS music (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  path TEXT NOT NULL UNIQUE,
   title TEXT NOT NULL,
   artist TEXT NOT NULL DEFAULT '',
   album TEXT NOT NULL DEFAULT '',
@@ -19,27 +29,21 @@ CREATE TABLE IF NOT EXISTS tracks (
   size_bytes INTEGER NOT NULL,
   mtime_unix INTEGER NOT NULL,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  FOREIGN KEY (root_id) REFERENCES library_roots(id) ON DELETE CASCADE,
-  UNIQUE (root_id, path)
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
-CREATE TABLE IF NOT EXISTS scan_jobs (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  root_id INTEGER,
-  path TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('waiting', 'running', 'completed', 'failed')),
-  total_files INTEGER NOT NULL DEFAULT 0,
-  scanned_files INTEGER NOT NULL DEFAULT 0,
-  message TEXT NOT NULL DEFAULT '',
-  error_message TEXT NOT NULL DEFAULT '',
-  started_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  finished_at TEXT,
-  FOREIGN KEY (root_id) REFERENCES library_roots(id) ON DELETE SET NULL
+CREATE TABLE IF NOT EXISTS library_music (
+  library_id INTEGER NOT NULL,
+  music_id INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE,
+  FOREIGN KEY (music_id) REFERENCES music(id) ON DELETE CASCADE,
+  UNIQUE (library_id, music_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_tracks_root_id ON tracks(root_id);
-CREATE INDEX IF NOT EXISTS idx_tracks_title ON tracks(title);
-CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist);
-CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album);
-CREATE INDEX IF NOT EXISTS idx_scan_jobs_started_at ON scan_jobs(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_music_title ON music(title);
+CREATE INDEX IF NOT EXISTS idx_music_artist ON music(artist);
+CREATE INDEX IF NOT EXISTS idx_music_album ON music(album);
+CREATE INDEX IF NOT EXISTS idx_library_music_library_id ON library_music(library_id);
+CREATE INDEX IF NOT EXISTS idx_library_music_music_id ON library_music(music_id);
+CREATE INDEX IF NOT EXISTS idx_scan_tasks_status ON scan_tasks(status);

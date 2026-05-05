@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"ayan/internal/storage"
 
@@ -20,15 +23,16 @@ type Server struct {
 
 type Storage interface {
 	GetLibrarySummary(ctx context.Context) (storage.LibrarySummary, error)
-	CurrentScanJob(ctx context.Context) (*storage.ScanJob, error)
-	ListRecentScanJobs(ctx context.Context, limit int64) ([]storage.ScanJob, error)
+	CreateLibrary(ctx context.Context, path string) (storage.Library, error)
+	ListLibraries(ctx context.Context) ([]storage.Library, error)
+	DeleteLibrary(ctx context.Context, id int64) error
+	ListActiveScanTasks(ctx context.Context) ([]storage.ScanTask, error)
 	ListTracks(ctx context.Context, query string) ([]storage.Track, error)
 	GetTrackPath(ctx context.Context, id int64) (string, error)
-	DeleteScanJob(ctx context.Context, jobID int64) error
 }
 
 type Scanner interface {
-	Start(ctx context.Context, path string) (storage.ScanJob, error)
+	Start(ctx context.Context, libraryID int64) (storage.ScanTask, error)
 }
 
 func New(storage Storage, scanner Scanner) *Server {
@@ -42,9 +46,11 @@ func (s *Server) Routes() http.Handler {
 	r := chi.NewRouter()
 	r.Get("/api/health", s.handleHealth)
 	r.Get("/api/library", s.handleLibrary)
-	r.Post("/api/scan", s.handleStartScan)
-	r.Get("/api/scans", s.handleScans)
-	r.Delete("/api/scans/{id}", s.handleDeleteScanJob)
+	r.Get("/api/libraries", s.handleLibraries)
+	r.Post("/api/libraries", s.handleCreateLibrary)
+	r.Delete("/api/libraries/{id}", s.handleDeleteLibrary)
+	r.Post("/api/libraries/{id}/scan", s.handleStartLibraryScan)
+	r.Get("/api/scan-tasks/active", s.handleActiveScanTasks)
 	r.Get("/api/tracks", s.handleTracks)
 	r.Get("/api/tracks/{id}/stream", s.handleTrackStream)
 	return r
@@ -68,68 +74,95 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) handleStartScan(w http.ResponseWriter, r *http.Request) {
-	var request startScanRequest
+func (s *Server) handleLibraries(w http.ResponseWriter, r *http.Request) {
+	libraries, err := s.storage.ListLibraries(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	response := make([]libraryResponse, 0, len(libraries))
+	for _, library := range libraries {
+		response = append(response, libraryResponseFromStorage(library))
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) handleCreateLibrary(w http.ResponseWriter, r *http.Request) {
+	var request createLibraryRequest
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 
-	job, err := s.scanner.Start(r.Context(), request.Path)
+	path, err := validateDirectory(request.Path)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, scanJobResponseFromStorage(job))
-}
-
-func (s *Server) handleScans(w http.ResponseWriter, r *http.Request) {
-	current, err := s.storage.CurrentScanJob(r.Context())
+	library, err := s.storage.CreateLibrary(r.Context(), path)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-
-	recent, err := s.storage.ListRecentScanJobs(r.Context(), 12)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	response := scansResponse{
-		Recent: make([]scanJobResponse, 0, len(recent)),
-	}
-	if current != nil {
-		currentResponse := scanJobResponseFromStorage(*current)
-		response.Current = &currentResponse
-	}
-	for _, job := range recent {
-		response.Recent = append(response.Recent, scanJobResponseFromStorage(job))
-	}
-
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusCreated, libraryResponseFromStorage(library))
 }
 
-func (s *Server) handleDeleteScanJob(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+func (s *Server) handleDeleteLibrary(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 
-	if err := s.storage.DeleteScanJob(r.Context(), id); errors.Is(err, storage.ErrNotFound) {
+	err = s.storage.DeleteLibrary(r.Context(), id)
+	if errors.Is(err, storage.ErrNotFound) {
 		writeError(w, http.StatusNotFound, err)
 		return
-	} else if errors.Is(err, storage.ErrInvalidOperation) {
-		writeError(w, http.StatusConflict, errors.New("cannot delete a waiting or running scan job"))
-		return
-	} else if err != nil {
+	}
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleStartLibraryScan(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	task, err := s.scanner.Start(r.Context(), id)
+	if errors.Is(err, storage.ErrNotFound) {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	if errors.Is(err, storage.ErrInvalidOperation) {
+		writeError(w, http.StatusConflict, errors.New("scan is already running for this library"))
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, scanTaskResponseFromStorage(task))
+}
+
+func (s *Server) handleActiveScanTasks(w http.ResponseWriter, r *http.Request) {
+	tasks, err := s.storage.ListActiveScanTasks(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	response := make([]scanTaskResponse, 0, len(tasks))
+	for _, task := range tasks {
+		response = append(response, scanTaskResponseFromStorage(task))
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) handleTracks(w http.ResponseWriter, r *http.Request) {
@@ -148,7 +181,7 @@ func (s *Server) handleTracks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTrackStream(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	id, err := parseID(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -180,6 +213,32 @@ func (s *Server) handleTrackStream(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, info.Name(), info.ModTime(), file)
 }
 
+func parseID(r *http.Request) (int64, error) {
+	return strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+}
+
+func validateDirectory(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", fmt.Errorf("path is required")
+	}
+	cleanPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve path: %w", err)
+	}
+	info, err := os.Stat(cleanPath)
+	if err != nil {
+		return "", fmt.Errorf("stat directory: %w", err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("path is not a directory")
+	}
+	if _, err := os.ReadDir(cleanPath); err != nil {
+		return "", fmt.Errorf("read directory: %w", err)
+	}
+	return cleanPath, nil
+}
+
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -194,7 +253,7 @@ type errorResponse struct {
 	Error string `json:"error"`
 }
 
-type startScanRequest struct {
+type createLibraryRequest struct {
 	Path string `json:"path"`
 }
 
@@ -204,25 +263,28 @@ type librarySummaryResponse struct {
 	LatestScanStatus string `json:"latestScanStatus"`
 }
 
-type scansResponse struct {
-	Current *scanJobResponse  `json:"current,omitempty"`
-	Recent  []scanJobResponse `json:"recent"`
+type libraryResponse struct {
+	ID         int64            `json:"id"`
+	Path       string           `json:"path"`
+	MusicCount int64            `json:"musicCount"`
+	CreatedAt  string           `json:"createdAt"`
+	UpdatedAt  string           `json:"updatedAt"`
+	Scan       scanTaskResponse `json:"scan"`
 }
 
-type scanJobResponse struct {
+type scanTaskResponse struct {
 	ID           int64  `json:"id"`
-	Path         string `json:"path"`
+	LibraryID    int64  `json:"libraryId"`
 	Status       string `json:"status"`
 	TotalFiles   int64  `json:"totalFiles"`
 	ScannedFiles int64  `json:"scannedFiles"`
 	Message      string `json:"message,omitempty"`
-	ErrorMessage string `json:"errorMessage,omitempty"`
-	StartedAt    string `json:"startedAt"`
-	FinishedAt   string `json:"finishedAt,omitempty"`
+	CompletedAt  string `json:"completedAt,omitempty"`
 }
 
 type trackResponse struct {
 	ID         int64  `json:"id"`
+	Path       string `json:"path"`
 	Title      string `json:"title"`
 	Artist     string `json:"artist"`
 	Album      string `json:"album"`
@@ -230,23 +292,33 @@ type trackResponse struct {
 	Format     string `json:"format"`
 }
 
-func scanJobResponseFromStorage(job storage.ScanJob) scanJobResponse {
-	return scanJobResponse{
-		ID:           job.ID,
-		Path:         job.Path,
-		Status:       job.Status,
-		TotalFiles:   job.TotalFiles,
-		ScannedFiles: job.ScannedFiles,
-		Message:      job.Message,
-		ErrorMessage: job.ErrorMessage,
-		StartedAt:    job.StartedAt,
-		FinishedAt:   job.FinishedAt,
+func libraryResponseFromStorage(library storage.Library) libraryResponse {
+	return libraryResponse{
+		ID:         library.ID,
+		Path:       library.Path,
+		MusicCount: library.MusicCount,
+		CreatedAt:  library.CreatedAt,
+		UpdatedAt:  library.UpdatedAt,
+		Scan:       scanTaskResponseFromStorage(library.Scan),
+	}
+}
+
+func scanTaskResponseFromStorage(task storage.ScanTask) scanTaskResponse {
+	return scanTaskResponse{
+		ID:           task.ID,
+		LibraryID:    task.LibraryID,
+		Status:       task.Status,
+		TotalFiles:   task.TotalFiles,
+		ScannedFiles: task.ScannedFiles,
+		Message:      task.Message,
+		CompletedAt:  task.CompletedAt,
 	}
 }
 
 func trackResponseFromStorage(track storage.Track) trackResponse {
 	return trackResponse{
 		ID:         track.ID,
+		Path:       track.Path,
 		Title:      track.Title,
 		Artist:     track.Artist,
 		Album:      track.Album,

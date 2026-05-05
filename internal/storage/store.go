@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -24,6 +25,7 @@ func Open(ctx context.Context, dbPath string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
+	db.SetMaxOpenConns(1)
 
 	store := &Store{db: db}
 	if err := store.init(ctx); err != nil {
@@ -46,41 +48,6 @@ func (s *Store) init(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("init schema: %w", err)
 	}
-	if err := s.ensureScanJobColumns(ctx); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (s *Store) ensureScanJobColumns(ctx context.Context) error {
-	hasMessage := false
-	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(scan_jobs)`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var cid int
-		var name, columnType string
-		var notNull int
-		var defaultValue any
-		var pk int
-		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
-			return err
-		}
-		if name == "message" {
-			hasMessage = true
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	if !hasMessage {
-		if _, err := s.db.ExecContext(ctx, `ALTER TABLE scan_jobs ADD COLUMN message TEXT NOT NULL DEFAULT ''`); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
@@ -96,92 +63,82 @@ func mkdirAll(path string) error {
 	return os.MkdirAll(path, 0o755)
 }
 
-func (s *Store) UpsertLibraryRoot(ctx context.Context, path string) (LibraryRoot, error) {
+func (s *Store) CreateLibrary(ctx context.Context, path string) (Library, error) {
 	row := s.db.QueryRowContext(ctx, `
-		INSERT INTO library_roots (path)
-		VALUES (?)
-		ON CONFLICT(path) DO UPDATE SET path = excluded.path
-		RETURNING id, path, created_at, COALESCE(last_scanned_at, '')
+		INSERT INTO libraries (path, updated_at)
+		VALUES (?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+		ON CONFLICT(path) DO UPDATE SET
+			path = excluded.path,
+			updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+		RETURNING id
 	`, path)
-	return scanLibraryRoot(row)
+	var id int64
+	if err := row.Scan(&id); err != nil {
+		return Library{}, err
+	}
+	if err := s.ensureScanTask(ctx, id); err != nil {
+		return Library{}, err
+	}
+	return s.GetLibrary(ctx, id)
 }
 
-func (s *Store) TouchLibraryRootScannedAt(ctx context.Context, id int64) error {
+func (s *Store) ensureScanTask(ctx context.Context, libraryID int64) error {
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE library_roots
-		SET last_scanned_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-		WHERE id = ?
-	`, id)
+		INSERT INTO scan_tasks (library_id, status)
+		VALUES (?, 'idle')
+		ON CONFLICT(library_id) DO NOTHING
+	`, libraryID)
 	return err
 }
 
-func (s *Store) CreateScanJob(ctx context.Context, rootID int64, path string) (ScanJob, error) {
-	row := s.db.QueryRowContext(ctx, `
-		INSERT INTO scan_jobs (root_id, path, status)
-		VALUES (?, ?, 'waiting')
-		RETURNING id, COALESCE(root_id, 0), path, status, total_files, scanned_files, message, error_message, started_at, COALESCE(finished_at, '')
-	`, rootID, path)
-	return scanScanJob(row)
+func (s *Store) GetLibrary(ctx context.Context, id int64) (Library, error) {
+	row := s.db.QueryRowContext(ctx, librarySelectSQL()+` WHERE l.id = ?`, id)
+	library, err := scanLibrary(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Library{}, ErrNotFound
+	}
+	return library, err
 }
 
-func (s *Store) MarkScanJobRunning(ctx context.Context, jobID int64, totalFiles int64) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE scan_jobs
-		SET status = 'running',
-		    total_files = ?,
-		    scanned_files = 0,
-		    message = '',
-		    error_message = ''
-		WHERE id = ?
-	`, totalFiles, jobID)
-	return err
+func (s *Store) ListLibraries(ctx context.Context) ([]Library, error) {
+	rows, err := s.db.QueryContext(ctx, librarySelectSQL()+` ORDER BY l.created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var libraries []Library
+	for rows.Next() {
+		library, err := scanLibrary(rows)
+		if err != nil {
+			return nil, err
+		}
+		libraries = append(libraries, library)
+	}
+	return libraries, rows.Err()
 }
 
-func (s *Store) UpdateScanJobProgress(ctx context.Context, jobID int64, scannedFiles int64) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE scan_jobs
-		SET scanned_files = ?
-		WHERE id = ?
-	`, scannedFiles, jobID)
-	return err
+func librarySelectSQL() string {
+	return `
+		SELECT
+			l.id,
+			l.path,
+			(SELECT COUNT(*) FROM library_music lm WHERE lm.library_id = l.id),
+			l.created_at,
+			l.updated_at,
+			COALESCE(st.id, 0),
+			l.id,
+			COALESCE(st.status, 'idle'),
+			COALESCE(st.total_files, 0),
+			COALESCE(st.scanned_files, 0),
+			COALESCE(st.message, ''),
+			COALESCE(st.completed_at, '')
+		FROM libraries l
+		LEFT JOIN scan_tasks st ON st.library_id = l.id
+	`
 }
 
-func (s *Store) MarkScanJobCompleted(ctx context.Context, jobID int64) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE scan_jobs
-		SET status = 'completed',
-		    scanned_files = total_files,
-		    finished_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-		WHERE id = ?
-	`, jobID)
-	return err
-}
-
-func (s *Store) MarkScanJobCompletedWithMessage(ctx context.Context, jobID int64, totalFiles int64, message string) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE scan_jobs
-		SET status = 'completed',
-		    total_files = ?,
-		    scanned_files = ?,
-		    message = ?,
-		    finished_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-		WHERE id = ?
-	`, totalFiles, totalFiles, message, jobID)
-	return err
-}
-
-func (s *Store) MarkScanJobFailed(ctx context.Context, jobID int64, message string) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE scan_jobs
-		SET status = 'failed',
-		    error_message = ?,
-		    finished_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-		WHERE id = ?
-	`, message, jobID)
-	return err
-}
-
-func (s *Store) ReplaceTracksForRoot(ctx context.Context, rootID int64, tracks []TrackInput) error {
+func (s *Store) DeleteLibrary(ctx context.Context, id int64) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -192,56 +149,254 @@ func (s *Store) ReplaceTracksForRoot(ctx context.Context, rootID int64, tracks [
 		}
 	}()
 
-	if _, err = tx.ExecContext(ctx, `DELETE FROM tracks WHERE root_id = ?`, rootID); err != nil {
-		return err
-	}
-
-	stmt, err := tx.PrepareContext(ctx, `
-		INSERT INTO tracks (
-			root_id, path, title, artist, album, duration_ms, format, size_bytes, mtime_unix
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`)
+	musicIDs, err := listMusicIDsByLibrary(ctx, tx, id)
 	if err != nil {
 		return err
 	}
-	defer stmt.Close()
 
-	for _, track := range tracks {
-		if _, err = stmt.ExecContext(
-			ctx,
-			track.RootID,
-			track.Path,
-			track.Title,
-			track.Artist,
-			track.Album,
-			track.DurationMS,
-			track.Format,
-			track.SizeBytes,
-			track.MTimeUnix,
-		); err != nil {
-			return err
-		}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM library_music WHERE library_id = ?`, id); err != nil {
+		return err
+	}
+	if err = deleteOrphanMusic(ctx, tx, musicIDs); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM scan_tasks WHERE library_id = ?`, id); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `DELETE FROM libraries WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrNotFound
 	}
 
 	return tx.Commit()
 }
 
-func (s *Store) CountTracksByRoot(ctx context.Context, rootID int64) (int64, error) {
+func (s *Store) StartScanTask(ctx context.Context, libraryID int64) (ScanTask, error) {
+	var status string
+	if err := s.db.QueryRowContext(ctx, `SELECT status FROM scan_tasks WHERE library_id = ?`, libraryID).Scan(&status); errors.Is(err, sql.ErrNoRows) {
+		if _, createErr := s.GetLibrary(ctx, libraryID); createErr != nil {
+			return ScanTask{}, createErr
+		}
+		if createErr := s.ensureScanTask(ctx, libraryID); createErr != nil {
+			return ScanTask{}, createErr
+		}
+	} else if err != nil {
+		return ScanTask{}, err
+	} else if status == "waiting" || status == "running" {
+		return ScanTask{}, ErrInvalidOperation
+	}
+
+	row := s.db.QueryRowContext(ctx, `
+		UPDATE scan_tasks
+		SET status = 'waiting',
+			total_files = 0,
+			scanned_files = 0,
+			message = '',
+			completed_at = NULL
+		WHERE library_id = ?
+		RETURNING id, library_id, status, total_files, scanned_files, message, COALESCE(completed_at, '')
+	`, libraryID)
+	return scanScanTask(row)
+}
+
+func (s *Store) MarkScanTaskRunning(ctx context.Context, libraryID int64, totalFiles int64) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE scan_tasks
+		SET status = 'running',
+			total_files = ?,
+			scanned_files = 0,
+			message = '',
+			completed_at = NULL
+		WHERE library_id = ?
+	`, totalFiles, libraryID)
+	return err
+}
+
+func (s *Store) UpdateScanTaskProgress(ctx context.Context, libraryID int64, scannedFiles int64) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE scan_tasks
+		SET scanned_files = ?
+		WHERE library_id = ?
+	`, scannedFiles, libraryID)
+	return err
+}
+
+func (s *Store) MarkScanTaskCompleted(ctx context.Context, libraryID int64, totalFiles int64, message string) error {
+	if strings.TrimSpace(message) == "" {
+		message = "扫描完成"
+	}
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE scan_tasks
+		SET status = 'completed',
+			total_files = ?,
+			scanned_files = ?,
+			message = ?,
+			completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+		WHERE library_id = ?
+	`, totalFiles, totalFiles, message, libraryID)
+	return err
+}
+
+func (s *Store) MarkScanTaskFailed(ctx context.Context, libraryID int64, message string) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE scan_tasks
+		SET status = 'failed',
+			message = ?,
+			completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+		WHERE library_id = ?
+	`, message, libraryID)
+	return err
+}
+
+func (s *Store) ListActiveScanTasks(ctx context.Context) ([]ScanTask, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, library_id, status, total_files, scanned_files, message, COALESCE(completed_at, '')
+		FROM scan_tasks
+		WHERE status IN ('waiting', 'running')
+		ORDER BY id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tasks []ScanTask
+	for rows.Next() {
+		task, err := scanScanTask(rows)
+		if err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, task)
+	}
+	return tasks, rows.Err()
+}
+
+func (s *Store) CountMusicByLibrary(ctx context.Context, libraryID int64) (int64, error) {
 	var count int64
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM tracks WHERE root_id = ?`, rootID).Scan(&count)
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM library_music WHERE library_id = ?`, libraryID).Scan(&count)
 	return count, err
 }
 
-func (s *Store) CountUnknownDurationTracksByRoot(ctx context.Context, rootID int64) (int64, error) {
+func (s *Store) CountUnknownDurationMusicByLibrary(ctx context.Context, libraryID int64) (int64, error) {
 	var count int64
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM tracks WHERE root_id = ? AND duration_ms = 0`, rootID).Scan(&count)
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM music m
+		JOIN library_music lm ON lm.music_id = m.id
+		WHERE lm.library_id = ? AND m.duration_ms = 0
+	`, libraryID).Scan(&count)
 	return count, err
+}
+
+func (s *Store) ReplaceMusicForLibrary(ctx context.Context, libraryID int64, tracks []MusicInput) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	oldMusicIDs, err := listMusicIDsByLibrary(ctx, tx, libraryID)
+	if err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM library_music WHERE library_id = ?`, libraryID); err != nil {
+		return err
+	}
+
+	for _, track := range tracks {
+		var musicID int64
+		err = tx.QueryRowContext(ctx, `
+			INSERT INTO music (
+				path, title, artist, album, duration_ms, format, size_bytes, mtime_unix, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+			ON CONFLICT(path) DO UPDATE SET
+				title = excluded.title,
+				artist = excluded.artist,
+				album = excluded.album,
+				duration_ms = excluded.duration_ms,
+				format = excluded.format,
+				size_bytes = excluded.size_bytes,
+				mtime_unix = excluded.mtime_unix,
+				updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+			RETURNING id
+		`, track.Path, track.Title, track.Artist, track.Album, track.DurationMS, track.Format, track.SizeBytes, track.MTimeUnix).Scan(&musicID)
+		if err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, `
+			INSERT INTO library_music (library_id, music_id)
+			VALUES (?, ?)
+			ON CONFLICT(library_id, music_id) DO NOTHING
+		`, libraryID, musicID); err != nil {
+			return err
+		}
+	}
+
+	if err = deleteOrphanMusic(ctx, tx, oldMusicIDs); err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `
+		UPDATE libraries
+		SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+		WHERE id = ?
+	`, libraryID)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func listMusicIDsByLibrary(ctx context.Context, tx *sql.Tx, libraryID int64) ([]int64, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT music_id FROM library_music WHERE library_id = ?`, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+func deleteOrphanMusic(ctx context.Context, tx *sql.Tx, musicIDs []int64) error {
+	for _, id := range musicIDs {
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM music
+			WHERE id = ?
+			  AND NOT EXISTS (
+				SELECT 1
+				FROM library_music
+				WHERE library_music.music_id = music.id
+			  )
+		`, id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) ListTracks(ctx context.Context, query string) ([]Track, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, root_id, path, title, artist, album, duration_ms, format, size_bytes, mtime_unix, created_at, updated_at
-		FROM tracks
+		SELECT id, path, title, artist, album, duration_ms, format, size_bytes, mtime_unix, created_at, updated_at
+		FROM music
 		WHERE
 			? = ''
 			OR title LIKE '%' || ? || '%'
@@ -259,7 +414,6 @@ func (s *Store) ListTracks(ctx context.Context, query string) ([]Track, error) {
 		var track Track
 		if err := rows.Scan(
 			&track.ID,
-			&track.RootID,
 			&track.Path,
 			&track.Title,
 			&track.Artist,
@@ -280,95 +434,11 @@ func (s *Store) ListTracks(ctx context.Context, query string) ([]Track, error) {
 
 func (s *Store) GetTrackPath(ctx context.Context, id int64) (string, error) {
 	var path string
-	err := s.db.QueryRowContext(ctx, `SELECT path FROM tracks WHERE id = ?`, id).Scan(&path)
+	err := s.db.QueryRowContext(ctx, `SELECT path FROM music WHERE id = ?`, id).Scan(&path)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", ErrNotFound
 	}
 	return path, err
-}
-
-func (s *Store) DeleteScanJob(ctx context.Context, jobID int64) error {
-	var rootID int64
-	var status string
-	err := s.db.QueryRowContext(ctx, `
-		SELECT COALESCE(root_id, 0), status
-		FROM scan_jobs
-		WHERE id = ?
-	`, jobID).Scan(&rootID, &status)
-	if errors.Is(err, sql.ErrNoRows) {
-		return ErrNotFound
-	}
-	if err != nil {
-		return err
-	}
-	if status == "waiting" || status == "running" {
-		return ErrInvalidOperation
-	}
-
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
-
-	if rootID != 0 {
-		if _, err = tx.ExecContext(ctx, `DELETE FROM tracks WHERE root_id = ?`, rootID); err != nil {
-			return err
-		}
-		if _, err = tx.ExecContext(ctx, `DELETE FROM library_roots WHERE id = ?`, rootID); err != nil {
-			return err
-		}
-	}
-	if _, err = tx.ExecContext(ctx, `DELETE FROM scan_jobs WHERE id = ?`, jobID); err != nil {
-		return err
-	}
-
-	return tx.Commit()
-}
-
-func (s *Store) ListRecentScanJobs(ctx context.Context, limit int64) ([]ScanJob, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, COALESCE(root_id, 0), path, status, total_files, scanned_files, message, error_message, started_at, COALESCE(finished_at, '')
-		FROM scan_jobs
-		ORDER BY started_at DESC
-		LIMIT ?
-	`, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var jobs []ScanJob
-	for rows.Next() {
-		job, err := scanScanJob(rows)
-		if err != nil {
-			return nil, err
-		}
-		jobs = append(jobs, job)
-	}
-	return jobs, rows.Err()
-}
-
-func (s *Store) CurrentScanJob(ctx context.Context) (*ScanJob, error) {
-	row := s.db.QueryRowContext(ctx, `
-		SELECT id, COALESCE(root_id, 0), path, status, total_files, scanned_files, message, error_message, started_at, COALESCE(finished_at, '')
-		FROM scan_jobs
-		WHERE status IN ('waiting', 'running')
-		ORDER BY started_at DESC
-		LIMIT 1
-	`)
-	job, err := scanScanJob(row)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &job, nil
 }
 
 func (s *Store) GetLibrarySummary(ctx context.Context) (LibrarySummary, error) {
@@ -376,9 +446,9 @@ func (s *Store) GetLibrarySummary(ctx context.Context) (LibrarySummary, error) {
 	var latest sql.NullString
 	err := s.db.QueryRowContext(ctx, `
 		SELECT
-			(SELECT COUNT(*) FROM library_roots),
-			(SELECT COUNT(*) FROM tracks),
-			(SELECT status FROM scan_jobs ORDER BY started_at DESC LIMIT 1)
+			(SELECT COUNT(*) FROM libraries),
+			(SELECT COUNT(*) FROM music),
+			(SELECT status FROM scan_tasks ORDER BY COALESCE(completed_at, '') DESC, id DESC LIMIT 1)
 	`).Scan(&summary.RootCount, &summary.TrackCount, &latest)
 	if latest.Valid {
 		summary.LatestScanStatus = latest.String
@@ -393,25 +463,35 @@ type scanner interface {
 	Scan(dest ...any) error
 }
 
-func scanLibraryRoot(row scanner) (LibraryRoot, error) {
-	var root LibraryRoot
-	err := row.Scan(&root.ID, &root.Path, &root.CreatedAt, &root.LastScannedAt)
-	return root, err
+func scanLibrary(row scanner) (Library, error) {
+	var library Library
+	err := row.Scan(
+		&library.ID,
+		&library.Path,
+		&library.MusicCount,
+		&library.CreatedAt,
+		&library.UpdatedAt,
+		&library.Scan.ID,
+		&library.Scan.LibraryID,
+		&library.Scan.Status,
+		&library.Scan.TotalFiles,
+		&library.Scan.ScannedFiles,
+		&library.Scan.Message,
+		&library.Scan.CompletedAt,
+	)
+	return library, err
 }
 
-func scanScanJob(row scanner) (ScanJob, error) {
-	var job ScanJob
+func scanScanTask(row scanner) (ScanTask, error) {
+	var task ScanTask
 	err := row.Scan(
-		&job.ID,
-		&job.RootID,
-		&job.Path,
-		&job.Status,
-		&job.TotalFiles,
-		&job.ScannedFiles,
-		&job.Message,
-		&job.ErrorMessage,
-		&job.StartedAt,
-		&job.FinishedAt,
+		&task.ID,
+		&task.LibraryID,
+		&task.Status,
+		&task.TotalFiles,
+		&task.ScannedFiles,
+		&task.Message,
+		&task.CompletedAt,
 	)
-	return job, err
+	return task, err
 }

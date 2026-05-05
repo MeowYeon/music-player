@@ -1,43 +1,91 @@
--- Library roots
+-- Libraries
 
--- name: GetLibraryRootByPath
-SELECT id, path, created_at, last_scanned_at
-FROM library_roots
-WHERE path = ?;
+-- name: CreateLibrary
+INSERT INTO libraries (path, updated_at)
+VALUES (?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+ON CONFLICT(path) DO UPDATE SET
+  path = excluded.path,
+  updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+RETURNING id;
 
--- name: InsertLibraryRoot
-INSERT INTO library_roots (path)
-VALUES (?)
-ON CONFLICT(path) DO UPDATE SET path = excluded.path
-RETURNING id, path, created_at, last_scanned_at;
+-- name: EnsureScanTask
+INSERT INTO scan_tasks (library_id, status)
+VALUES (?, 'idle')
+ON CONFLICT(library_id) DO NOTHING;
 
--- name: TouchLibraryRootScannedAt
-UPDATE library_roots
-SET last_scanned_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-WHERE id = ?;
+-- name: ListLibraries
+SELECT
+  l.id,
+  l.path,
+  (SELECT COUNT(*) FROM library_music lm WHERE lm.library_id = l.id) AS music_count,
+  l.created_at,
+  l.updated_at,
+  st.id,
+  l.id AS library_id,
+  st.status,
+  st.total_files,
+  st.scanned_files,
+  st.message,
+  st.completed_at
+FROM libraries l
+LEFT JOIN scan_tasks st ON st.library_id = l.id
+ORDER BY l.created_at DESC;
 
--- name: CountLibraryRoots
-SELECT COUNT(*) FROM library_roots;
+-- Scan tasks
 
--- Tracks
+-- name: StartScanTask
+UPDATE scan_tasks
+SET status = 'waiting',
+    total_files = 0,
+    scanned_files = 0,
+    message = '',
+    completed_at = NULL
+WHERE library_id = ?
+RETURNING id, library_id, status, total_files, scanned_files, message, completed_at;
 
--- name: DeleteTracksByRoot
-DELETE FROM tracks
-WHERE root_id = ?;
+-- name: MarkScanTaskRunning
+UPDATE scan_tasks
+SET status = 'running',
+    total_files = ?,
+    scanned_files = 0,
+    message = '',
+    completed_at = NULL
+WHERE library_id = ?;
 
--- name: InsertTrack
-INSERT INTO tracks (
-  root_id,
-  path,
-  title,
-  artist,
-  album,
-  duration_ms,
-  format,
-  size_bytes,
-  mtime_unix
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(root_id, path) DO UPDATE SET
+-- name: UpdateScanTaskProgress
+UPDATE scan_tasks
+SET scanned_files = ?
+WHERE library_id = ?;
+
+-- name: MarkScanTaskCompleted
+UPDATE scan_tasks
+SET status = 'completed',
+    total_files = ?,
+    scanned_files = ?,
+    message = ?,
+    completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE library_id = ?;
+
+-- name: MarkScanTaskFailed
+UPDATE scan_tasks
+SET status = 'failed',
+    message = ?,
+    completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE library_id = ?;
+
+-- name: ListActiveScanTasks
+SELECT id, library_id, status, total_files, scanned_files, message, completed_at
+FROM scan_tasks
+WHERE status IN ('waiting', 'running')
+ORDER BY id ASC;
+
+-- Music
+
+-- name: UpsertMusic
+INSERT INTO music (
+  path, title, artist, album, duration_ms, format, size_bytes, mtime_unix, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+ON CONFLICT(path) DO UPDATE SET
   title = excluded.title,
   artist = excluded.artist,
   album = excluded.album,
@@ -45,11 +93,17 @@ ON CONFLICT(root_id, path) DO UPDATE SET
   format = excluded.format,
   size_bytes = excluded.size_bytes,
   mtime_unix = excluded.mtime_unix,
-  updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now');
+  updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+RETURNING id;
+
+-- name: LinkLibraryMusic
+INSERT INTO library_music (library_id, music_id)
+VALUES (?, ?)
+ON CONFLICT(library_id, music_id) DO NOTHING;
 
 -- name: ListTracks
-SELECT id, root_id, path, title, artist, album, duration_ms, format, size_bytes, mtime_unix, created_at, updated_at
-FROM tracks
+SELECT id, path, title, artist, album, duration_ms, format, size_bytes, mtime_unix, created_at, updated_at
+FROM music
 WHERE
   ? = ''
   OR title LIKE '%' || ? || '%'
@@ -57,71 +111,19 @@ WHERE
   OR album LIKE '%' || ? || '%'
 ORDER BY title COLLATE NOCASE ASC, artist COLLATE NOCASE ASC, album COLLATE NOCASE ASC;
 
--- name: GetTrackPath
-SELECT path
-FROM tracks
-WHERE id = ?;
-
--- name: CountTracks
-SELECT COUNT(*) FROM tracks;
-
--- Scan jobs
-
--- name: CreateScanJob
-INSERT INTO scan_jobs (root_id, path, status)
-VALUES (?, ?, 'waiting')
-RETURNING id, root_id, path, status, total_files, scanned_files, error_message, started_at, finished_at;
-
--- name: MarkScanJobRunning
-UPDATE scan_jobs
-SET status = 'running',
-    total_files = ?,
-    scanned_files = 0,
-    message = '',
-    error_message = ''
-WHERE id = ?;
-
--- name: UpdateScanJobProgress
-UPDATE scan_jobs
-SET scanned_files = ?
-WHERE id = ?;
-
--- name: MarkScanJobCompleted
-UPDATE scan_jobs
-SET status = 'completed',
-    scanned_files = total_files,
-    finished_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-WHERE id = ?;
-
--- name: MarkScanJobFailed
-UPDATE scan_jobs
-SET status = 'failed',
-    error_message = ?,
-    finished_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-WHERE id = ?;
-
--- name: ListRecentScanJobs
-SELECT id, root_id, path, status, total_files, scanned_files, message, error_message, started_at, finished_at
-FROM scan_jobs
-ORDER BY started_at DESC
-LIMIT ?;
-
--- name: DeleteScanJobTracks
-DELETE FROM tracks
-WHERE root_id = ?;
-
--- name: DeleteScanJobRoot
-DELETE FROM library_roots
-WHERE id = ?;
-
--- name: DeleteScanJob
-DELETE FROM scan_jobs
-WHERE id = ?;
+-- name: DeleteOrphanMusic
+DELETE FROM music
+WHERE id = ?
+  AND NOT EXISTS (
+    SELECT 1
+    FROM library_music
+    WHERE library_music.music_id = music.id
+  );
 
 -- Library summary
 
 -- name: GetLibrarySummary
 SELECT
-  (SELECT COUNT(*) FROM library_roots) AS root_count,
-  (SELECT COUNT(*) FROM tracks) AS track_count,
-  (SELECT status FROM scan_jobs ORDER BY started_at DESC LIMIT 1) AS latest_scan_status;
+  (SELECT COUNT(*) FROM libraries) AS root_count,
+  (SELECT COUNT(*) FROM music) AS track_count,
+  (SELECT status FROM scan_tasks ORDER BY COALESCE(completed_at, '') DESC, id DESC LIMIT 1) AS latest_scan_status;
