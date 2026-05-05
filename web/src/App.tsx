@@ -248,7 +248,15 @@ function App() {
   const recentTracks = recentTracksQuery.data ?? []
 
   useEffect(() => {
-    if (selectedPlaylistId === null && playlists.length > 0) {
+    if (!playlists.length) {
+      setSelectedPlaylistId(null)
+      return
+    }
+    if (selectedPlaylistId === null) {
+      setSelectedPlaylistId(playlists[0].id)
+      return
+    }
+    if (!playlists.some((playlist) => playlist.id === selectedPlaylistId)) {
       setSelectedPlaylistId(playlists[0].id)
     }
   }, [playlists, selectedPlaylistId])
@@ -571,8 +579,8 @@ function App() {
             selectedPlaylist={selectedPlaylist}
             tracks={activePlaylistTracks}
             playlistName={playlistName}
-            isLoading={playlistsQuery.isLoading || playlistTracksQuery.isLoading}
-            isError={playlistsQuery.isError || playlistTracksQuery.isError}
+            isLoading={playlistsQuery.isLoading || (selectedPlaylist !== null && playlistTracksQuery.isLoading)}
+            isError={playlistsQuery.isError || (selectedPlaylist !== null && playlistTracksQuery.isError)}
             isCreating={createPlaylistMutation.isPending}
             isMutating={renamePlaylistMutation.isPending || deletePlaylistMutation.isPending}
             selectedTrack={selectedTrack}
@@ -1053,8 +1061,8 @@ function PlaylistsView({
           onToggleLike={onToggleLike}
           onToggleMenu={onToggleMenu}
           onAddTrackToPlaylist={onAddTrackToPlaylist}
-  onPlayNext={onPlayNext}
-  openTrackMenuId={openTrackMenuId}
+          onPlayNext={onPlayNext}
+          openTrackMenuId={openTrackMenuId}
           playlists={playlists}
         />
 
