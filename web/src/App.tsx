@@ -10,6 +10,7 @@ import {
   Library,
   ListMusic,
   ListPlus,
+  MoreHorizontal,
   Pause,
   PanelLeftClose,
   PanelLeftOpen,
@@ -25,6 +26,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import {
+  addTrackToPlaylist,
   createPlaylist,
   createLibrary,
   deleteLibrary,
@@ -38,8 +40,10 @@ import {
   getRecentTracks,
   getTracks,
   getTrackStreamUrl,
+  likeTrack,
   renamePlaylist,
   scanLibrary,
+  unlikeTrack,
   type LibraryItem,
   type Playlist,
   type ScanStatus,
@@ -62,6 +66,7 @@ function App() {
   const [playlistName, setPlaylistName] = useState('')
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | null>(null)
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null)
+  const [openTrackMenuId, setOpenTrackMenuId] = useState<number | null>(null)
   const [libraryPath, setLibraryPath] = useState(defaultLibraryPath)
   const [libraryFormError, setLibraryFormError] = useState('')
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null)
@@ -193,6 +198,23 @@ function App() {
     },
   })
 
+  const addTrackToPlaylistMutation = useMutation({
+    mutationFn: ({ playlistId, trackId }: { playlistId: number; trackId: number }) => addTrackToPlaylist(playlistId, trackId),
+    onSuccess: () => {
+      setOpenTrackMenuId(null)
+      queryClient.invalidateQueries({ queryKey: ['playlists'] })
+      queryClient.invalidateQueries({ queryKey: ['playlist-tracks'] })
+    },
+  })
+
+  const toggleLikeMutation = useMutation({
+    mutationFn: (track: Track) => (track.liked ? unlikeTrack(track.id) : likeTrack(track.id)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tracks'] })
+      queryClient.invalidateQueries({ queryKey: ['playlist-tracks'] })
+    },
+  })
+
   useEffect(() => {
     const activeCount = activeTasks.length
     if (previousActiveCountRef.current > 0 && activeCount === 0) {
@@ -279,7 +301,7 @@ function App() {
   }
 
   function handleDeletePlaylist(playlist: Playlist) {
-    const confirmed = window.confirm(`确定删除歌单「${playlist.name}」吗？\\n\\n这只会删除歌单，不会删除本地音乐文件。`)
+    const confirmed = window.confirm(`确定删除歌单「${playlist.name}」吗？\n\n这只会删除歌单，不会删除本地音乐文件。`)
     if (!confirmed) {
       return
     }
@@ -288,10 +310,29 @@ function App() {
 
   function handleSelectTrack(track: Track) {
     setSelectedTrack(track)
-    if (currentTrack?.id === track.id && (playbackStatus === 'loading' || playbackStatus === 'playing')) {
-      return
-    }
+  }
+
+  function handlePlayTrackFromList(track: Track) {
+    setSelectedTrack(track)
+    setOpenTrackMenuId(null)
     playTrack(track)
+  }
+
+  function handleToggleLike(track: Track) {
+    toggleLikeMutation.mutate(track)
+  }
+
+  function handleAddTrackToPlaylist(track: Track, playlist: Playlist) {
+    addTrackToPlaylistMutation.mutate({ playlistId: playlist.id, trackId: track.id })
+  }
+
+  function handleToggleTrackMenu(track: Track) {
+    setOpenTrackMenuId((id) => (id === track.id ? null : track.id))
+  }
+
+  function handlePlayNext(track: Track) {
+    setSelectedTrack(track)
+    setOpenTrackMenuId(null)
   }
 
   function playTrack(track: Track) {
@@ -436,6 +477,13 @@ function App() {
             isError={tracksQuery.isError}
             query={query}
             onSelectTrack={handleSelectTrack}
+            onPlayTrack={handlePlayTrackFromList}
+            onToggleLike={handleToggleLike}
+            onToggleMenu={handleToggleTrackMenu}
+            onAddTrackToPlaylist={handleAddTrackToPlaylist}
+            onPlayNext={handlePlayNext}
+            openTrackMenuId={openTrackMenuId}
+            playlists={playlists}
           />
         ) : view === 'libraries' ? (
           <LibrariesView
@@ -472,6 +520,12 @@ function App() {
             onRenamePlaylist={handleRenamePlaylist}
             onDeletePlaylist={handleDeletePlaylist}
             onSelectTrack={handleSelectTrack}
+            onPlayTrack={handlePlayTrackFromList}
+            onToggleLike={handleToggleLike}
+            onToggleMenu={handleToggleTrackMenu}
+            onAddTrackToPlaylist={handleAddTrackToPlaylist}
+            onPlayNext={handlePlayNext}
+            openTrackMenuId={openTrackMenuId}
           />
         ) : view === 'liked' ? (
           <SystemPlaylistView
@@ -486,6 +540,13 @@ function App() {
             emptyTitle="还没有喜欢的歌曲"
             emptyBody="在歌曲列表中点亮收藏按钮后，这里会显示它们。"
             onSelectTrack={handleSelectTrack}
+            onPlayTrack={handlePlayTrackFromList}
+            onToggleLike={handleToggleLike}
+            onToggleMenu={handleToggleTrackMenu}
+            onAddTrackToPlaylist={handleAddTrackToPlaylist}
+            onPlayNext={handlePlayNext}
+            openTrackMenuId={openTrackMenuId}
+            playlists={playlists}
           />
         ) : (
           <SystemPlaylistView
@@ -500,6 +561,13 @@ function App() {
             emptyTitle="还没有最近播放"
             emptyBody="开始播放任意歌曲后，这里会展示最近听过的内容。"
             onSelectTrack={handleSelectTrack}
+            onPlayTrack={handlePlayTrackFromList}
+            onToggleLike={handleToggleLike}
+            onToggleMenu={handleToggleTrackMenu}
+            onAddTrackToPlaylist={handleAddTrackToPlaylist}
+            onPlayNext={handlePlayNext}
+            openTrackMenuId={openTrackMenuId}
+            playlists={playlists}
           />
         )}
       </main>
@@ -628,6 +696,13 @@ function SongsView({
   isError,
   query,
   onSelectTrack,
+  onPlayTrack,
+  onToggleLike,
+  onToggleMenu,
+  onAddTrackToPlaylist,
+  onPlayNext,
+  openTrackMenuId,
+  playlists,
 }: {
   tracks: Track[]
   selectedTrack: Track | null
@@ -638,6 +713,13 @@ function SongsView({
   isError: boolean
   query: string
   onSelectTrack: (track: Track) => void
+  onPlayTrack: (track: Track) => void
+  onToggleLike: (track: Track) => void
+  onToggleMenu: (track: Track) => void
+  onAddTrackToPlaylist: (track: Track, playlist: Playlist) => void
+  onPlayNext: (track: Track) => void
+  openTrackMenuId: number | null
+  playlists: Playlist[]
 }) {
   return (
     <section className="library-pane" aria-label="歌曲库">
@@ -665,42 +747,20 @@ function SongsView({
           <span>{tracks.length} 首</span>
         </div>
 
-        <div className="table-scroll">
-          <table className="track-table">
-            <thead>
-              <tr>
-                <th>标题</th>
-                <th>艺术家</th>
-                <th>专辑</th>
-                <th>时长</th>
-                <th>格式</th>
-                <th>路径</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tracks.map((track) => (
-                <tr
-                  key={track.id}
-                  className={trackRowClass(track, selectedTrack, currentTrack, playbackStatus)}
-                  onClick={() => onSelectTrack(track)}
-                >
-                  <td>
-                    <button type="button" className="track-title">
-                      {track.title}
-                    </button>
-                  </td>
-                  <td className={!track.artist ? 'muted-cell' : undefined}>{displayArtist(track)}</td>
-                  <td className={!track.album ? 'muted-cell' : undefined}>{displayAlbum(track)}</td>
-                  <td>{formatDuration(track.durationMs)}</td>
-                  <td>
-                    <span className="format-chip">{track.format}</span>
-                  </td>
-                  <td className="path-cell">{track.path}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <PlaylistTrackTable
+          tracks={tracks}
+          selectedTrack={selectedTrack}
+          currentTrack={currentTrack}
+          playbackStatus={playbackStatus}
+          onSelectTrack={onSelectTrack}
+          onPlayTrack={onPlayTrack}
+          onToggleLike={onToggleLike}
+          onToggleMenu={onToggleMenu}
+          onAddTrackToPlaylist={onAddTrackToPlaylist}
+          onPlayNext={onPlayNext}
+          openTrackMenuId={openTrackMenuId}
+          playlists={playlists}
+        />
 
         {isLoading && <StateMessage title="正在读取歌曲库" body="稍等一下，阿言正在同步本地媒体库。" />}
         {isError && <StateMessage title="歌曲加载失败" body="请确认后端服务已启动，然后刷新页面或重新扫描。" tone="error" />}
@@ -733,6 +793,12 @@ function PlaylistsView({
   onRenamePlaylist,
   onDeletePlaylist,
   onSelectTrack,
+  onPlayTrack,
+  onToggleLike,
+  onToggleMenu,
+  onAddTrackToPlaylist,
+  onPlayNext,
+  openTrackMenuId,
 }: {
   playlists: Playlist[]
   selectedPlaylist: Playlist | null
@@ -751,6 +817,12 @@ function PlaylistsView({
   onRenamePlaylist: (playlist: Playlist) => void
   onDeletePlaylist: (playlist: Playlist) => void
   onSelectTrack: (track: Track) => void
+  onPlayTrack: (track: Track) => void
+  onToggleLike: (track: Track) => void
+  onToggleMenu: (track: Track) => void
+  onAddTrackToPlaylist: (track: Track, playlist: Playlist) => void
+  onPlayNext: (track: Track) => void
+  openTrackMenuId: number | null
 }) {
   return (
     <section className="playlist-page" aria-label="歌单管理">
@@ -814,6 +886,13 @@ function PlaylistsView({
           currentTrack={currentTrack}
           playbackStatus={playbackStatus}
           onSelectTrack={onSelectTrack}
+          onPlayTrack={onPlayTrack}
+          onToggleLike={onToggleLike}
+          onToggleMenu={onToggleMenu}
+          onAddTrackToPlaylist={onAddTrackToPlaylist}
+  onPlayNext={onPlayNext}
+  openTrackMenuId={openTrackMenuId}
+          playlists={playlists}
         />
 
         {isLoading && <StateMessage title="正在读取歌单" body="稍等一下，阿言正在同步歌单数据。" />}
@@ -836,6 +915,13 @@ function SystemPlaylistView({
   emptyTitle,
   emptyBody,
   onSelectTrack,
+  onPlayTrack,
+  onToggleLike,
+  onToggleMenu,
+  onAddTrackToPlaylist,
+  onPlayNext,
+  openTrackMenuId,
+  playlists,
 }: {
   title: string
   body: string
@@ -848,6 +934,13 @@ function SystemPlaylistView({
   emptyTitle: string
   emptyBody: string
   onSelectTrack: (track: Track) => void
+  onPlayTrack: (track: Track) => void
+  onToggleLike: (track: Track) => void
+  onToggleMenu: (track: Track) => void
+  onAddTrackToPlaylist: (track: Track, playlist: Playlist) => void
+  onPlayNext: (track: Track) => void
+  openTrackMenuId: number | null
+  playlists: Playlist[]
 }) {
   return (
     <section className="system-playlist-page" aria-label={title}>
@@ -873,6 +966,13 @@ function SystemPlaylistView({
           currentTrack={currentTrack}
           playbackStatus={playbackStatus}
           onSelectTrack={onSelectTrack}
+          onPlayTrack={onPlayTrack}
+          onToggleLike={onToggleLike}
+          onToggleMenu={onToggleMenu}
+          onAddTrackToPlaylist={onAddTrackToPlaylist}
+          onPlayNext={onPlayNext}
+          openTrackMenuId={openTrackMenuId}
+          playlists={playlists}
         />
         {isLoading && <StateMessage title="正在读取歌曲" body="稍等一下，阿言正在同步系统歌单。" />}
         {isError && <StateMessage title="系统歌单加载失败" body="请确认后端服务已启动，然后刷新页面。" tone="error" />}
@@ -888,29 +988,65 @@ function PlaylistTrackTable({
   currentTrack,
   playbackStatus,
   onSelectTrack,
+  onPlayTrack,
+  onToggleLike,
+  onToggleMenu,
+  onAddTrackToPlaylist,
+  onPlayNext,
+  openTrackMenuId,
+  playlists,
 }: {
   tracks: Track[]
   selectedTrack: Track | null
   currentTrack: Track | null
   playbackStatus: PlaybackStatus
   onSelectTrack: (track: Track) => void
+  onPlayTrack: (track: Track) => void
+  onToggleLike: (track: Track) => void
+  onToggleMenu: (track: Track) => void
+  onAddTrackToPlaylist: (track: Track, playlist: Playlist) => void
+  onPlayNext: (track: Track) => void
+  openTrackMenuId: number | null
+  playlists: Playlist[]
 }) {
   return (
     <div className="table-scroll">
       <table className="track-table">
         <thead>
           <tr>
+            <th>播放</th>
             <th>标题</th>
             <th>艺术家</th>
             <th>专辑</th>
             <th>时长</th>
             <th>格式</th>
             <th>路径</th>
+            <th>收藏</th>
+            <th>更多</th>
           </tr>
         </thead>
         <tbody>
           {tracks.map((track) => (
-            <tr key={track.id} className={trackRowClass(track, selectedTrack, currentTrack, playbackStatus)} onClick={() => onSelectTrack(track)}>
+            <tr
+              key={track.id}
+              className={trackRowClass(track, selectedTrack, currentTrack, playbackStatus)}
+              onClick={() => onSelectTrack(track)}
+              onDoubleClick={() => onPlayTrack(track)}
+            >
+              <td>
+                <button
+                  type="button"
+                  className="row-icon-button play-row-button"
+                  aria-label={`播放 ${track.title}`}
+                  title="播放"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onPlayTrack(track)
+                  }}
+                >
+                  <Play size={15} fill="currentColor" />
+                </button>
+              </td>
               <td>
                 <button type="button" className="track-title">
                   {track.title}
@@ -923,6 +1059,51 @@ function PlaylistTrackTable({
                 <span className="format-chip">{track.format}</span>
               </td>
               <td className="path-cell">{track.path}</td>
+              <td>
+                <button
+                  type="button"
+                  className={`row-icon-button like-row-button ${track.liked ? 'liked' : ''}`}
+                  aria-label={track.liked ? '取消喜欢' : '加入我喜欢'}
+                  title={track.liked ? '取消喜欢' : '加入我喜欢'}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onToggleLike(track)
+                  }}
+                >
+                  <Heart size={15} fill={track.liked ? 'currentColor' : 'none'} />
+                </button>
+              </td>
+              <td className="track-menu-cell">
+                <button
+                  type="button"
+                  className="row-icon-button"
+                  aria-label="更多操作"
+                  title="更多操作"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onToggleMenu(track)
+                  }}
+                >
+                  <MoreHorizontal size={16} />
+                </button>
+                {openTrackMenuId === track.id && (
+                  <div className="track-menu" onClick={(event) => event.stopPropagation()}>
+                    <strong>添加到歌单</strong>
+                    {playlists.length ? (
+                      playlists.map((playlist) => (
+                        <button key={playlist.id} type="button" onClick={() => onAddTrackToPlaylist(track, playlist)}>
+                          {playlist.name}
+                        </button>
+                      ))
+                    ) : (
+                      <span>暂无普通歌单</span>
+                    )}
+                    <button type="button" onClick={() => onPlayNext(track)}>
+                      下一首播放
+                    </button>
+                  </div>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>

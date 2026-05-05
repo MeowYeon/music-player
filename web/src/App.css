@@ -414,21 +414,25 @@ button {
   color: #113f35;
 }
 
-.track-table tbody tr.selected.playing .track-title::after {
+.track-table tbody tr.current {
+  color: #113f35;
+}
+
+.track-table tbody tr.current.playing .track-title::after {
   color: #147c63;
   content: "  播放中";
   font-size: 12px;
   font-weight: 720;
 }
 
-.track-table tbody tr.selected.loading .track-title::after {
+.track-table tbody tr.current.loading .track-title::after {
   color: #d49a38;
   content: "  加载中";
   font-size: 12px;
   font-weight: 720;
 }
 
-.track-table tbody tr.selected.paused .track-title::after {
+.track-table tbody tr.current.paused .track-title::after {
   color: #66716e;
   content: "  已暂停";
   font-size: 12px;
@@ -442,6 +446,78 @@ button {
   font-weight: 700;
   padding: 0;
   text-align: left;
+}
+
+.row-icon-button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: #f0f3ef;
+  color: #66716e;
+}
+
+.row-icon-button:hover {
+  background: #e7f5ef;
+  color: #147c63;
+}
+
+.play-row-button {
+  background: #e7f5ef;
+  color: #147c63;
+}
+
+.like-row-button.liked {
+  background: #fff0eb;
+  color: #d76348;
+}
+
+.track-menu-cell {
+  position: relative;
+}
+
+.track-menu {
+  position: absolute;
+  z-index: 4;
+  right: 12px;
+  top: 46px;
+  display: grid;
+  min-width: 180px;
+  gap: 4px;
+  border: 1px solid #dfe8df;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 18px 40px rgba(63, 84, 76, 0.16);
+  padding: 8px;
+}
+
+.track-menu strong {
+  color: #71807a;
+  font-size: 12px;
+  padding: 5px 8px;
+}
+
+.track-menu button,
+.track-menu span {
+  min-height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #44504c;
+  font-size: 13px;
+  text-align: left;
+  padding: 6px 8px;
+}
+
+.track-menu button:hover {
+  background: #e7f5ef;
+  color: #147c63;
+}
+
+.track-menu span {
+  color: #87918d;
 }
 
 .muted-cell {
