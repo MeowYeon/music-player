@@ -11,7 +11,7 @@
 - Product name: Ayan / 阿言.
 - Backend language: Go.
 - Frontend code lives in `web/`.
-- Keep the MVP simple and aligned with `design/architecture.md`.
+- Keep the MVP simple and aligned with `docs/design/architecture.md`.
 - Do not add database migration tooling, sqlc, desktop shell code, cover art, lyrics, playlists, or realtime file watching in the MVP unless the design is updated first.
 
 ## Git

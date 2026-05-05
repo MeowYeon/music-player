@@ -7,9 +7,13 @@
 - 后端：`cmd/`、`internal/`
 - 前端：`web/`
 - 启停脚本：`scripts/`
-- 设计资料：`design/`
+- 说明文档：`docs/`
 
-更多说明见 [code.md](./code.md)。
+更多说明：
+
+- [代码结构](./docs/code.md)
+- [版本待办](./docs/todo.md)
+- [设计文档](./docs/design/README.md)
 
 ## 开发服务
 

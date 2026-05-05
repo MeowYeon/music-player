@@ -10,10 +10,9 @@
 ├── internal/            # Go 后端内部模块
 ├── web/                 # React + Vite 前端
 ├── scripts/             # 开发服务启停脚本
-├── design/              # 架构与 UI 设计资料
+├── docs/                # 项目说明、设计资料、版本待办
 ├── config.yaml          # 后端本地配置
-├── todo.md              # 版本待办和验收记录
-└── code.md              # 本说明文档
+└── README.md            # 项目入口说明
 ```
 
 根目录只保留项目级配置和 Go 后端代码。前端工程完整放在 `web/` 下，避免前后端文件混在一起。
