@@ -12,6 +12,7 @@
 - [v0.3 UI 设计](./v0.3-ui.md)
 - [v0.4 基础播放器功能设计](./v0.4-player.md)
 - [v0.4 UI 设计](./v0.4-ui.md)
+- [v0.4.1 UI 对齐设计](./v0.4.1-ui.md)
 - [MVP 界面图](./ayan-ui-mvp.png)
 - [v0.3 媒体库页](./ayan-v0.3-libraries.png)
 - [v0.3 歌曲页](./ayan-v0.3-songs.png)
