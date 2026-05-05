@@ -33,7 +33,6 @@ button {
   display: grid;
   grid-template-columns: 84px minmax(0, 1fr);
   min-height: 100vh;
-  padding-bottom: 94px;
 }
 
 .sidebar {
@@ -91,7 +90,7 @@ button {
   min-width: 0;
   flex-direction: column;
   gap: 22px;
-  padding: 24px 26px 28px;
+  padding: 24px 26px 122px;
 }
 
 .topbar {
@@ -815,7 +814,7 @@ button {
   position: fixed;
   right: 18px;
   bottom: 18px;
-  left: 18px;
+  left: 102px;
   display: grid;
   grid-template-columns: minmax(240px, 0.9fr) auto minmax(420px, 2.4fr) auto;
   align-items: center;
@@ -957,6 +956,7 @@ button {
   }
 
   .player-bar {
+    left: 90px;
     grid-template-columns: 1fr auto;
   }
 
@@ -991,7 +991,7 @@ button {
   }
 
   .workspace {
-    padding: 18px;
+    padding: 18px 18px 28px;
   }
 
   .topbar,
@@ -1021,6 +1021,7 @@ button {
   }
 
   .player-bar {
+    left: 18px;
     grid-template-columns: 1fr;
     gap: 12px;
   }
