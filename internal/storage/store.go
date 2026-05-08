@@ -394,6 +394,15 @@ func (s *Store) RecordRecentPlay(ctx context.Context, trackID int64) error {
 	return err
 }
 
+func (s *Store) ClearRecentPlays(ctx context.Context) error {
+	id, err := s.systemPlaylistID(ctx, "recent")
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `DELETE FROM playlist_music WHERE playlist_id = ?`, id)
+	return err
+}
+
 func (s *Store) systemPlaylistID(ctx context.Context, playlistType string) (int64, error) {
 	var id int64
 	err := s.db.QueryRowContext(ctx, `SELECT id FROM playlists WHERE type = ?`, playlistType).Scan(&id)

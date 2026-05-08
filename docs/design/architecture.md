@@ -96,6 +96,7 @@ Go 后端
 - `web/src/App.tsx`
   - 主界面、导航、媒体库页、歌曲页、歌单页、我喜欢、最近播放和底部播放器。
   - 维护播放状态、播放队列、播放顺序、音量、当前歌曲和临时 UI 状态。
+  - 使用 `localStorage` 记住音量、播放模式、队列和当前歌曲，但不自动续播。
   - 使用 TanStack Query 轮询媒体库、歌曲、歌单和活跃扫描状态。
 
 - `web/src/api.ts`
@@ -277,6 +278,10 @@ last_played_at
 
 - `POST /api/tracks/{id}/recent-play`
   - 记录一次最近播放。
+
+- `DELETE /api/playlists/recent/tracks`
+  - 清空系统歌单 `最近播放`。
+  - 只删除最近播放关系，不删除本地音乐文件，不影响普通歌单和 `我喜欢`。
 
 ## 主要流程
 

@@ -296,6 +296,16 @@ export async function getRecentTracks(): Promise<Track[]> {
   return withMockFallback(() => request<Track[]>('/api/playlists/recent/tracks'), mockTracks.slice().reverse())
 }
 
+export async function clearRecentTracks(): Promise<void> {
+  if (useMocks) {
+    return
+  }
+
+  await request<void>('/api/playlists/recent/tracks', {
+    method: 'DELETE',
+  })
+}
+
 export async function addTrackToPlaylist(playlistId: number, trackId: number): Promise<void> {
   await request<void>(`/api/playlists/${playlistId}/tracks`, {
     method: 'POST',

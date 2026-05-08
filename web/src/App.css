@@ -359,6 +359,81 @@ button {
   padding: 18px 20px 10px;
 }
 
+.track-filter-bar,
+.track-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid #edf0eb;
+  padding: 10px 20px;
+}
+
+.track-filter-bar {
+  flex-wrap: wrap;
+  background: rgba(248, 251, 248, 0.72);
+}
+
+.track-filter-bar label,
+.inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #5d6964;
+  font-size: 13px;
+  font-weight: 680;
+}
+
+.track-filter-bar select {
+  height: 32px;
+  border: 1px solid #dce5dc;
+  border-radius: 8px;
+  outline: 0;
+  background: #fff;
+  color: #26312f;
+  padding: 0 10px;
+}
+
+.track-toolbar {
+  overflow-x: auto;
+  background: rgba(255, 255, 255, 0.84);
+}
+
+.track-toolbar span {
+  flex: 0 0 auto;
+  color: #74817b;
+  font-size: 13px;
+}
+
+.track-toolbar button {
+  display: inline-flex;
+  height: 32px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 8px;
+  background: #edf2ee;
+  color: #3d4945;
+  font-size: 13px;
+  font-weight: 720;
+  padding: 0 10px;
+}
+
+.track-toolbar button.primary-button {
+  background: #20a783;
+  color: #fff;
+}
+
+.track-toolbar button.danger {
+  background: #fff0eb;
+  color: #bd4e36;
+}
+
+.track-toolbar button:disabled {
+  cursor: default;
+  opacity: 0.46;
+}
+
 .table-header h3,
 .section-title h3 {
   margin: 0;
@@ -412,6 +487,10 @@ button {
 .track-table tbody tr.selected {
   background: #e7f7f1;
   color: #113f35;
+}
+
+.track-table tbody tr.checked {
+  background: #f0faf6;
 }
 
 .track-table tbody tr.current {

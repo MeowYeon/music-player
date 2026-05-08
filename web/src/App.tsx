@@ -4,7 +4,6 @@ import {
   AudioLines,
   CheckCircle2,
   Clock3,
-  FolderOpen,
   Heart,
   History,
   Library,
@@ -29,6 +28,7 @@ import {
 } from 'lucide-react'
 import {
   addTrackToPlaylist,
+  clearRecentTracks,
   createPlaylist,
   createLibrary,
   deleteLibrary,
@@ -45,6 +45,7 @@ import {
   likeTrack,
   recordRecentPlay,
   renamePlaylist,
+  removeTrackFromPlaylist,
   scanLibrary,
   unlikeTrack,
   type LibraryItem,
@@ -55,30 +56,44 @@ import {
 } from './api'
 
 const defaultLibraryPath = '/mnt/c/Users/guohp/Music/test'
+const playerStorageKey = 'ayan.player.v1'
 type PlaybackStatus = 'idle' | 'loading' | 'playing' | 'paused' | 'ended' | 'error'
 type ViewMode = 'libraries' | 'songs' | 'playlists' | 'liked' | 'recent'
-type PlayMode = 'sequence' | 'loop' | 'shuffle'
+type PlayMode = 'sequence' | 'loop' | 'shuffle' | 'single'
+type TrackSortField = 'title' | 'artist' | 'album' | 'duration' | 'format'
+
+type StoredPlayerState = {
+  volume?: number
+  playMode?: PlayMode
+  queueTrackIds?: number[]
+  currentTrackId?: number | null
+}
 
 function App() {
   const queryClient = useQueryClient()
   const audioRef = useRef<HTMLAudioElement>(null)
   const previousActiveCountRef = useRef(0)
   const lastRecordedTrackIdRef = useRef<number | null>(null)
+  const storedPlayerStateRef = useRef(readStoredPlayerState())
   const [view, setView] = useState<ViewMode>('libraries')
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [query, setQuery] = useState('')
+  const [sortField, setSortField] = useState<TrackSortField>('title')
+  const [formatFilter, setFormatFilter] = useState('')
+  const [likedOnly, setLikedOnly] = useState(false)
   const [libraryQueryText, setLibraryQueryText] = useState('')
   const [playlistName, setPlaylistName] = useState('')
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | null>(null)
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null)
+  const [selectedTrackIds, setSelectedTrackIds] = useState<number[]>([])
   const [openTrackMenuId, setOpenTrackMenuId] = useState<number | null>(null)
-  const [playlistDialogTrack, setPlaylistDialogTrack] = useState<Track | null>(null)
+  const [playlistDialogTracks, setPlaylistDialogTracks] = useState<Track[]>([])
   const [playlistDialogPlaylistId, setPlaylistDialogPlaylistId] = useState<number | null>(null)
   const [playlistDialogName, setPlaylistDialogName] = useState('')
   const [playlistDialogError, setPlaylistDialogError] = useState('')
   const [isPlaylistDialogSaving, setIsPlaylistDialogSaving] = useState(false)
   const [queue, setQueue] = useState<Track[]>([])
-  const [playMode, setPlayMode] = useState<PlayMode>('sequence')
+  const [playMode, setPlayMode] = useState<PlayMode>(storedPlayerStateRef.current.playMode ?? 'sequence')
   const [isQueueOpen, setIsQueueOpen] = useState(false)
   const [libraryPath, setLibraryPath] = useState(defaultLibraryPath)
   const [libraryFormError, setLibraryFormError] = useState('')
@@ -87,7 +102,7 @@ function App() {
   const [playerError, setPlayerError] = useState('')
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
-  const [volume, setVolume] = useState(72)
+  const [volume, setVolume] = useState(storedPlayerStateRef.current.volume ?? 72)
   const [isVolumeOpen, setIsVolumeOpen] = useState(false)
 
   const librarySummaryQuery = useQuery({
@@ -211,10 +226,9 @@ function App() {
     },
   })
 
-  const addTrackToPlaylistMutation = useMutation({
-    mutationFn: ({ playlistId, trackId }: { playlistId: number; trackId: number }) => addTrackToPlaylist(playlistId, trackId),
+  const removeTrackFromPlaylistMutation = useMutation({
+    mutationFn: ({ playlistId, trackId }: { playlistId: number; trackId: number }) => removeTrackFromPlaylist(playlistId, trackId),
     onSuccess: () => {
-      setOpenTrackMenuId(null)
       queryClient.invalidateQueries({ queryKey: ['playlists'] })
       queryClient.invalidateQueries({ queryKey: ['playlist-tracks'] })
     },
@@ -235,6 +249,14 @@ function App() {
     },
   })
 
+  const clearRecentTracksMutation = useMutation({
+    mutationFn: clearRecentTracks,
+    onSuccess: () => {
+      setSelectedTrackIds([])
+      queryClient.invalidateQueries({ queryKey: ['playlist-tracks', 'recent'] })
+    },
+  })
+
   useEffect(() => {
     const activeCount = activeTasks.length
     if (previousActiveCountRef.current > 0 && activeCount === 0) {
@@ -246,11 +268,71 @@ function App() {
   }, [activeTasks.length, queryClient])
 
   const tracks = tracksQuery.data ?? []
+  const visibleTracks = useMemo(() => {
+    return sortTracks(
+      tracks.filter((track) => {
+        if (formatFilter && track.format !== formatFilter) {
+          return false
+        }
+        if (likedOnly && !track.liked) {
+          return false
+        }
+        return true
+      }),
+      sortField,
+    )
+  }, [formatFilter, likedOnly, sortField, tracks])
+  const availableFormats = useMemo(() => Array.from(new Set(tracks.map((track) => track.format))).sort(), [tracks])
   const playlists = playlistsQuery.data ?? []
   const selectedPlaylist = playlists.find((playlist) => playlist.id === selectedPlaylistId) ?? null
   const activePlaylistTracks = playlistTracksQuery.data ?? []
   const likedTracks = likedTracksQuery.data ?? []
   const recentTracks = recentTracksQuery.data ?? []
+  const allKnownTracks = useMemo(() => {
+    const byID = new Map<number, Track>()
+    for (const track of [...tracks, ...activePlaylistTracks, ...likedTracks, ...recentTracks, ...queue]) {
+      byID.set(track.id, track)
+    }
+    return byID
+  }, [activePlaylistTracks, likedTracks, queue, recentTracks, tracks])
+
+  useEffect(() => {
+    if (!tracks.length || queue.length || currentTrack) {
+      return
+    }
+    const stored = storedPlayerStateRef.current
+    const restoredQueue = (stored.queueTrackIds ?? [])
+      .map((id) => tracks.find((track) => track.id === id))
+      .filter((track): track is Track => Boolean(track))
+    const restoredCurrent = stored.currentTrackId ? tracks.find((track) => track.id === stored.currentTrackId) ?? null : null
+    if (restoredQueue.length) {
+      setQueue(restoredQueue)
+    }
+    if (restoredCurrent) {
+      setCurrentTrack(restoredCurrent)
+      setPlaybackStatus('paused')
+    }
+  }, [currentTrack, queue.length, tracks])
+
+  useEffect(() => {
+    const validIDs = new Set(allKnownTracks.keys())
+    setSelectedTrackIds((ids) => ids.filter((id) => validIDs.has(id)))
+  }, [allKnownTracks])
+
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = volume / 100
+    }
+  }, [volume])
+
+  useEffect(() => {
+    writeStoredPlayerState({
+      volume,
+      playMode,
+      queueTrackIds: queue.map((track) => track.id),
+      currentTrackId: currentTrack?.id ?? null,
+    })
+  }, [currentTrack?.id, playMode, queue, volume])
 
   useEffect(() => {
     if (!playlists.length) {
@@ -267,7 +349,7 @@ function App() {
   }, [playlists, selectedPlaylistId])
 
   useEffect(() => {
-    if (!playlistDialogTrack) {
+    if (!playlistDialogTracks.length) {
       return
     }
     if (!playlists.length) {
@@ -277,7 +359,7 @@ function App() {
     if (playlistDialogPlaylistId === null || !playlists.some((playlist) => playlist.id === playlistDialogPlaylistId)) {
       setPlaylistDialogPlaylistId(playlists[0].id)
     }
-  }, [playlistDialogPlaylistId, playlistDialogTrack, playlists])
+  }, [playlistDialogPlaylistId, playlistDialogTracks.length, playlists])
   const filteredLibraries = useMemo(() => {
     const normalized = libraryQueryText.trim().toLowerCase()
     if (!normalized) {
@@ -287,8 +369,11 @@ function App() {
   }, [libraries, libraryQueryText])
 
   const queueIndex = currentTrack ? queue.findIndex((track) => track.id === currentTrack.id) : -1
-  const canUsePrevious = queue.length > 0 && queueIndex > 0
-  const canUseNext = queue.length > 0 && (playMode === 'loop' || playMode === 'shuffle' || (queueIndex >= 0 && queueIndex < queue.length - 1))
+  const canUsePrevious = playMode === 'single' ? Boolean(currentTrack) : queue.length > 0 && queueIndex > 0
+  const canUseNext =
+    playMode === 'single'
+      ? Boolean(currentTrack)
+      : queue.length > 0 && (playMode === 'loop' || playMode === 'shuffle' || (queueIndex >= 0 && queueIndex < queue.length - 1))
   const playerDuration = duration || (currentTrack?.durationMs ? currentTrack.durationMs / 1000 : 0)
   const isPlaying = playbackStatus === 'playing'
   const showPauseButton = playbackStatus === 'loading' || playbackStatus === 'playing'
@@ -353,6 +438,26 @@ function App() {
     setSelectedTrack(track)
   }
 
+  function handleToggleTrackSelected(track: Track, checked: boolean) {
+    setSelectedTrack(track)
+    setSelectedTrackIds((ids) => {
+      if (checked) {
+        return ids.includes(track.id) ? ids : [...ids, track.id]
+      }
+      return ids.filter((id) => id !== track.id)
+    })
+  }
+
+  function handleToggleAllTracks(trackList: Track[], checked: boolean) {
+    const ids = trackList.map((track) => track.id)
+    setSelectedTrackIds((currentIDs) => {
+      if (!checked) {
+        return currentIDs.filter((id) => !ids.includes(id))
+      }
+      return Array.from(new Set([...currentIDs, ...ids]))
+    })
+  }
+
   function handlePlayTrackFromList(track: Track) {
     setSelectedTrack(track)
     setOpenTrackMenuId(null)
@@ -360,18 +465,44 @@ function App() {
     playTrack(track)
   }
 
+  function handlePlayTrackList(trackList: Track[]) {
+    const [firstTrack] = trackList
+    if (!firstTrack) {
+      return
+    }
+    setSelectedTrack(firstTrack)
+    setOpenTrackMenuId(null)
+    setQueue(trackList)
+    playTrack(firstTrack)
+  }
+
   function handleToggleLike(track: Track) {
     toggleLikeMutation.mutate(track)
   }
 
-  function handleAddTrackToPlaylist(track: Track, playlist: Playlist) {
-    addTrackToPlaylistMutation.mutate({ playlistId: playlist.id, trackId: track.id })
+  async function handleBatchLike(trackList: Track[], liked: boolean) {
+    await Promise.all(trackList.map((track) => (liked ? likeTrack(track.id) : unlikeTrack(track.id))))
+    setSelectedTrackIds([])
+    queryClient.invalidateQueries({ queryKey: ['tracks'] })
+    queryClient.invalidateQueries({ queryKey: ['playlist-tracks'] })
   }
 
   function handleOpenPlaylistDialog(track: Track) {
     setSelectedTrack(track)
     setOpenTrackMenuId(null)
-    setPlaylistDialogTrack(track)
+    setPlaylistDialogTracks([track])
+    setPlaylistDialogPlaylistId(playlists[0]?.id ?? null)
+    setPlaylistDialogName('')
+    setPlaylistDialogError('')
+  }
+
+  function handleOpenPlaylistDialogForTracks(trackList: Track[]) {
+    if (!trackList.length) {
+      return
+    }
+    setSelectedTrack(trackList[0])
+    setOpenTrackMenuId(null)
+    setPlaylistDialogTracks(trackList)
     setPlaylistDialogPlaylistId(playlists[0]?.id ?? null)
     setPlaylistDialogName('')
     setPlaylistDialogError('')
@@ -381,14 +512,14 @@ function App() {
     if (isPlaylistDialogSaving) {
       return
     }
-    setPlaylistDialogTrack(null)
+    setPlaylistDialogTracks([])
     setPlaylistDialogPlaylistId(null)
     setPlaylistDialogName('')
     setPlaylistDialogError('')
   }
 
   function handleConfirmAddToPlaylist() {
-    if (!playlistDialogTrack) {
+    if (!playlistDialogTracks.length) {
       return
     }
     if (playlistDialogPlaylistId === null) {
@@ -396,21 +527,23 @@ function App() {
       return
     }
 
-    addTrackToPlaylistMutation.mutate(
-      { playlistId: playlistDialogPlaylistId, trackId: playlistDialogTrack.id },
-      {
-        onSuccess: () => {
-          setPlaylistDialogTrack(null)
-          setPlaylistDialogPlaylistId(null)
-          setPlaylistDialogName('')
-          setPlaylistDialogError('')
-        },
-      },
-    )
+    setIsPlaylistDialogSaving(true)
+    Promise.all(playlistDialogTracks.map((track) => addTrackToPlaylist(playlistDialogPlaylistId, track.id)))
+      .then(() => {
+        setSelectedTrackIds([])
+        setPlaylistDialogTracks([])
+        setPlaylistDialogPlaylistId(null)
+        setPlaylistDialogName('')
+        setPlaylistDialogError('')
+        queryClient.invalidateQueries({ queryKey: ['playlists'] })
+        queryClient.invalidateQueries({ queryKey: ['playlist-tracks'] })
+      })
+      .catch((error) => setPlaylistDialogError(errorMessage(error, '添加歌曲到歌单失败。')))
+      .finally(() => setIsPlaylistDialogSaving(false))
   }
 
   async function handleCreatePlaylistAndAdd() {
-    if (!playlistDialogTrack) {
+    if (!playlistDialogTracks.length) {
       return
     }
     const name = playlistDialogName.trim()
@@ -423,11 +556,12 @@ function App() {
     setPlaylistDialogError('')
     try {
       const playlist = await createPlaylist(name)
-      await addTrackToPlaylist(playlist.id, playlistDialogTrack.id)
+      await Promise.all(playlistDialogTracks.map((track) => addTrackToPlaylist(playlist.id, track.id)))
       queryClient.invalidateQueries({ queryKey: ['playlists'] })
       queryClient.invalidateQueries({ queryKey: ['playlist-tracks'] })
+      setSelectedTrackIds([])
       setSelectedPlaylistId(playlist.id)
-      setPlaylistDialogTrack(null)
+      setPlaylistDialogTracks([])
       setPlaylistDialogPlaylistId(null)
       setPlaylistDialogName('')
     } catch (error) {
@@ -444,14 +578,57 @@ function App() {
   function handlePlayNext(track: Track) {
     setSelectedTrack(track)
     setOpenTrackMenuId(null)
+    insertTracksAfterCurrent([track])
+  }
+
+  function handlePlayNextTracks(trackList: Track[]) {
+    if (!trackList.length) {
+      return
+    }
+    setSelectedTrack(trackList[0])
+    setOpenTrackMenuId(null)
+    insertTracksAfterCurrent(trackList)
+    setSelectedTrackIds([])
+  }
+
+  function insertTracksAfterCurrent(trackList: Track[]) {
     setQueue((items) => {
-      const withoutTrack = items.filter((item) => item.id !== track.id)
-      const currentQueueIndex = currentTrack ? withoutTrack.findIndex((item) => item.id === currentTrack.id) : -1
+      const trackIDs = new Set(trackList.map((track) => track.id))
+      const withoutTracks = items.filter((item) => !trackIDs.has(item.id))
+      const currentQueueIndex = currentTrack ? withoutTracks.findIndex((item) => item.id === currentTrack.id) : -1
       if (currentQueueIndex < 0) {
-        return [...withoutTrack, track]
+        return [...withoutTracks, ...trackList]
       }
-      return [...withoutTrack.slice(0, currentQueueIndex + 1), track, ...withoutTrack.slice(currentQueueIndex + 1)]
+      return [...withoutTracks.slice(0, currentQueueIndex + 1), ...trackList, ...withoutTracks.slice(currentQueueIndex + 1)]
     })
+  }
+
+  function handleRemoveTrackFromPlaylist(track: Track) {
+    if (selectedPlaylistId === null) {
+      return
+    }
+    removeTrackFromPlaylistMutation.mutate({ playlistId: selectedPlaylistId, trackId: track.id })
+  }
+
+  async function handleRemoveTracksFromPlaylist(trackList: Track[]) {
+    if (selectedPlaylistId === null || !trackList.length) {
+      return
+    }
+    await Promise.all(trackList.map((track) => removeTrackFromPlaylist(selectedPlaylistId, track.id)))
+    setSelectedTrackIds([])
+    queryClient.invalidateQueries({ queryKey: ['playlists'] })
+    queryClient.invalidateQueries({ queryKey: ['playlist-tracks'] })
+  }
+
+  function handleClearRecentTracks() {
+    if (!recentTracks.length) {
+      return
+    }
+    const confirmed = window.confirm('确定清空最近播放吗？这不会删除本地音乐文件。')
+    if (!confirmed) {
+      return
+    }
+    clearRecentTracksMutation.mutate()
   }
 
   function playTrack(track: Track) {
@@ -497,6 +674,10 @@ function App() {
   }
 
   function handlePreviousTrack() {
+    if (playMode === 'single' && currentTrack) {
+      playTrack(currentTrack)
+      return
+    }
     if (queueIndex > 0) {
       playTrack(queue[queueIndex - 1])
     }
@@ -510,7 +691,7 @@ function App() {
   }
 
   function handlePlayModeToggle() {
-    setPlayMode((mode) => (mode === 'sequence' ? 'loop' : mode === 'loop' ? 'shuffle' : 'sequence'))
+    setPlayMode((mode) => (mode === 'sequence' ? 'loop' : mode === 'loop' ? 'shuffle' : mode === 'shuffle' ? 'single' : 'sequence'))
   }
 
   function handleRemoveQueueTrack(track: Track) {
@@ -518,6 +699,9 @@ function App() {
   }
 
   function nextQueueTrack() {
+    if (playMode === 'single') {
+      return currentTrack
+    }
     if (!queue.length) {
       return null
     }
@@ -627,7 +811,13 @@ function App() {
 
         {view === 'songs' ? (
           <SongsView
-            tracks={tracks}
+            tracks={visibleTracks}
+            totalTracks={tracks.length}
+            availableFormats={availableFormats}
+            sortField={sortField}
+            formatFilter={formatFilter}
+            likedOnly={likedOnly}
+            selectedTrackIds={selectedTrackIds}
             selectedTrack={selectedTrack}
             currentTrack={currentTrack}
             playbackStatus={playbackStatus}
@@ -635,12 +825,22 @@ function App() {
             isLoading={tracksQuery.isLoading}
             isError={tracksQuery.isError}
             query={query}
+            onSortFieldChange={setSortField}
+            onFormatFilterChange={setFormatFilter}
+            onLikedOnlyChange={setLikedOnly}
             onSelectTrack={handleSelectTrack}
+            onToggleTrackSelected={handleToggleTrackSelected}
+            onToggleAllTracks={handleToggleAllTracks}
+            onPlayAll={handlePlayTrackList}
+            onPlaySelected={handlePlayTrackList}
             onPlayTrack={handlePlayTrackFromList}
             onToggleLike={handleToggleLike}
+            onBatchLike={handleBatchLike}
             onToggleMenu={handleToggleTrackMenu}
             onOpenPlaylistDialog={handleOpenPlaylistDialog}
+            onOpenPlaylistDialogForTracks={handleOpenPlaylistDialogForTracks}
             onPlayNext={handlePlayNext}
+            onPlayNextTracks={handlePlayNextTracks}
             openTrackMenuId={openTrackMenuId}
             playlists={playlists}
           />
@@ -673,17 +873,27 @@ function App() {
             selectedTrack={selectedTrack}
             currentTrack={currentTrack}
             playbackStatus={playbackStatus}
+            selectedTrackIds={selectedTrackIds}
             onNameChange={setPlaylistName}
             onSubmit={handlePlaylistSubmit}
             onSelectPlaylist={setSelectedPlaylistId}
             onRenamePlaylist={handleRenamePlaylist}
             onDeletePlaylist={handleDeletePlaylist}
             onSelectTrack={handleSelectTrack}
+            onToggleTrackSelected={handleToggleTrackSelected}
+            onToggleAllTracks={handleToggleAllTracks}
+            onPlayAll={handlePlayTrackList}
+            onPlaySelected={handlePlayTrackList}
             onPlayTrack={handlePlayTrackFromList}
             onToggleLike={handleToggleLike}
+            onBatchLike={handleBatchLike}
             onToggleMenu={handleToggleTrackMenu}
             onOpenPlaylistDialog={handleOpenPlaylistDialog}
+            onOpenPlaylistDialogForTracks={handleOpenPlaylistDialogForTracks}
             onPlayNext={handlePlayNext}
+            onPlayNextTracks={handlePlayNextTracks}
+            onRemoveTrack={handleRemoveTrackFromPlaylist}
+            onRemoveTracks={handleRemoveTracksFromPlaylist}
             openTrackMenuId={openTrackMenuId}
           />
         ) : view === 'liked' ? (
@@ -694,16 +904,24 @@ function App() {
             selectedTrack={selectedTrack}
             currentTrack={currentTrack}
             playbackStatus={playbackStatus}
+            selectedTrackIds={selectedTrackIds}
             isLoading={likedTracksQuery.isLoading}
             isError={likedTracksQuery.isError}
             emptyTitle="还没有喜欢的歌曲"
             emptyBody="在歌曲列表中点亮收藏按钮后，这里会显示它们。"
             onSelectTrack={handleSelectTrack}
+            onToggleTrackSelected={handleToggleTrackSelected}
+            onToggleAllTracks={handleToggleAllTracks}
+            onPlayAll={handlePlayTrackList}
+            onPlaySelected={handlePlayTrackList}
             onPlayTrack={handlePlayTrackFromList}
             onToggleLike={handleToggleLike}
+            onBatchLike={handleBatchLike}
             onToggleMenu={handleToggleTrackMenu}
             onOpenPlaylistDialog={handleOpenPlaylistDialog}
+            onOpenPlaylistDialogForTracks={handleOpenPlaylistDialogForTracks}
             onPlayNext={handlePlayNext}
+            onPlayNextTracks={handlePlayNextTracks}
             openTrackMenuId={openTrackMenuId}
             playlists={playlists}
           />
@@ -715,16 +933,26 @@ function App() {
             selectedTrack={selectedTrack}
             currentTrack={currentTrack}
             playbackStatus={playbackStatus}
+            selectedTrackIds={selectedTrackIds}
             isLoading={recentTracksQuery.isLoading}
             isError={recentTracksQuery.isError}
             emptyTitle="还没有最近播放"
             emptyBody="开始播放任意歌曲后，这里会展示最近听过的内容。"
             onSelectTrack={handleSelectTrack}
+            onToggleTrackSelected={handleToggleTrackSelected}
+            onToggleAllTracks={handleToggleAllTracks}
+            onPlayAll={handlePlayTrackList}
+            onPlaySelected={handlePlayTrackList}
             onPlayTrack={handlePlayTrackFromList}
             onToggleLike={handleToggleLike}
+            onBatchLike={handleBatchLike}
             onToggleMenu={handleToggleTrackMenu}
             onOpenPlaylistDialog={handleOpenPlaylistDialog}
+            onOpenPlaylistDialogForTracks={handleOpenPlaylistDialogForTracks}
             onPlayNext={handlePlayNext}
+            onPlayNextTracks={handlePlayNextTracks}
+            onClearTracks={handleClearRecentTracks}
+            isClearing={clearRecentTracksMutation.isPending}
             openTrackMenuId={openTrackMenuId}
             playlists={playlists}
           />
@@ -857,14 +1085,14 @@ function App() {
         />
       )}
 
-      {playlistDialogTrack && (
+      {playlistDialogTracks.length > 0 && (
         <PlaylistPickerModal
-          track={playlistDialogTrack}
+          tracks={playlistDialogTracks}
           playlists={playlists}
           selectedPlaylistId={playlistDialogPlaylistId}
           newPlaylistName={playlistDialogName}
           error={playlistDialogError}
-          isSaving={isPlaylistDialogSaving || addTrackToPlaylistMutation.isPending}
+          isSaving={isPlaylistDialogSaving}
           onSelectPlaylist={setPlaylistDialogPlaylistId}
           onNewPlaylistNameChange={setPlaylistDialogName}
           onConfirm={handleConfirmAddToPlaylist}
@@ -961,7 +1189,7 @@ function QueueDrawer({
 }
 
 function PlaylistPickerModal({
-  track,
+  tracks,
   playlists,
   selectedPlaylistId,
   newPlaylistName,
@@ -973,7 +1201,7 @@ function PlaylistPickerModal({
   onCreateAndAdd,
   onClose,
 }: {
-  track: Track
+  tracks: Track[]
   playlists: Playlist[]
   selectedPlaylistId: number | null
   newPlaylistName: string
@@ -985,13 +1213,14 @@ function PlaylistPickerModal({
   onCreateAndAdd: () => void
   onClose: () => void
 }) {
+  const title = tracks.length === 1 ? tracks[0].title : `${tracks.length} 首歌曲`
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <section className="playlist-modal" role="dialog" aria-modal="true" aria-labelledby="playlist-modal-title" onClick={(event) => event.stopPropagation()}>
         <div className="modal-header">
           <div>
             <h2 id="playlist-modal-title">添加到歌单</h2>
-            <p title={track.title}>正在添加：{track.title}</p>
+            <p title={title}>正在添加：{title}</p>
           </div>
           <button type="button" aria-label="关闭" title="关闭" onClick={onClose} disabled={isSaving}>
             <X size={18} />
@@ -1049,6 +1278,12 @@ function PlaylistPickerModal({
 
 function SongsView({
   tracks,
+  totalTracks,
+  availableFormats,
+  sortField,
+  formatFilter,
+  likedOnly,
+  selectedTrackIds,
   selectedTrack,
   currentTrack,
   playbackStatus,
@@ -1056,16 +1291,32 @@ function SongsView({
   isLoading,
   isError,
   query,
+  onSortFieldChange,
+  onFormatFilterChange,
+  onLikedOnlyChange,
   onSelectTrack,
+  onToggleTrackSelected,
+  onToggleAllTracks,
+  onPlayAll,
+  onPlaySelected,
   onPlayTrack,
   onToggleLike,
+  onBatchLike,
   onToggleMenu,
   onOpenPlaylistDialog,
+  onOpenPlaylistDialogForTracks,
   onPlayNext,
+  onPlayNextTracks,
   openTrackMenuId,
   playlists,
 }: {
   tracks: Track[]
+  totalTracks: number
+  availableFormats: string[]
+  sortField: TrackSortField
+  formatFilter: string
+  likedOnly: boolean
+  selectedTrackIds: number[]
   selectedTrack: Track | null
   currentTrack: Track | null
   playbackStatus: PlaybackStatus
@@ -1073,15 +1324,26 @@ function SongsView({
   isLoading: boolean
   isError: boolean
   query: string
+  onSortFieldChange: (field: TrackSortField) => void
+  onFormatFilterChange: (format: string) => void
+  onLikedOnlyChange: (likedOnly: boolean) => void
   onSelectTrack: (track: Track) => void
+  onToggleTrackSelected: (track: Track, checked: boolean) => void
+  onToggleAllTracks: (tracks: Track[], checked: boolean) => void
+  onPlayAll: (tracks: Track[]) => void
+  onPlaySelected: (tracks: Track[]) => void
   onPlayTrack: (track: Track) => void
   onToggleLike: (track: Track) => void
+  onBatchLike: (tracks: Track[], liked: boolean) => void
   onToggleMenu: (track: Track) => void
   onOpenPlaylistDialog: (track: Track) => void
+  onOpenPlaylistDialogForTracks: (tracks: Track[]) => void
   onPlayNext: (track: Track) => void
+  onPlayNextTracks: (tracks: Track[]) => void
   openTrackMenuId: number | null
   playlists: Playlist[]
 }) {
+  const selectedTracks = tracks.filter((track) => selectedTrackIds.includes(track.id))
   return (
     <section className="library-pane" aria-label="歌曲库">
       <div className="now-summary">
@@ -1105,22 +1367,46 @@ function SongsView({
       <div className="table-wrap">
         <div className="table-header">
           <h3>全部歌曲</h3>
-          <span>{tracks.length} 首</span>
+          <span>{tracks.length} / {totalTracks} 首</span>
         </div>
+
+        <TrackFilterBar
+          sortField={sortField}
+          formatFilter={formatFilter}
+          likedOnly={likedOnly}
+          availableFormats={availableFormats}
+          onSortFieldChange={onSortFieldChange}
+          onFormatFilterChange={onFormatFilterChange}
+          onLikedOnlyChange={onLikedOnlyChange}
+        />
+
+        <TrackListToolbar
+          tracks={tracks}
+          selectedTracks={selectedTracks}
+          canRemove={false}
+          canClear={false}
+          onPlayAll={onPlayAll}
+          onPlaySelected={onPlaySelected}
+          onPlayNextTracks={onPlayNextTracks}
+          onOpenPlaylistDialogForTracks={onOpenPlaylistDialogForTracks}
+          onBatchLike={onBatchLike}
+        />
 
         <PlaylistTrackTable
           tracks={tracks}
+          selectedTrackIds={selectedTrackIds}
           selectedTrack={selectedTrack}
           currentTrack={currentTrack}
           playbackStatus={playbackStatus}
           onSelectTrack={onSelectTrack}
+          onToggleTrackSelected={onToggleTrackSelected}
+          onToggleAllTracks={onToggleAllTracks}
           onPlayTrack={onPlayTrack}
           onToggleLike={onToggleLike}
           onToggleMenu={onToggleMenu}
           onOpenPlaylistDialog={onOpenPlaylistDialog}
           onPlayNext={onPlayNext}
           openTrackMenuId={openTrackMenuId}
-          playlists={playlists}
         />
 
         {isLoading && <StateMessage title="正在读取歌曲库" body="稍等一下，阿言正在同步本地媒体库。" />}
@@ -1148,17 +1434,27 @@ function PlaylistsView({
   selectedTrack,
   currentTrack,
   playbackStatus,
+  selectedTrackIds,
   onNameChange,
   onSubmit,
   onSelectPlaylist,
   onRenamePlaylist,
   onDeletePlaylist,
   onSelectTrack,
+  onToggleTrackSelected,
+  onToggleAllTracks,
+  onPlayAll,
+  onPlaySelected,
   onPlayTrack,
   onToggleLike,
+  onBatchLike,
   onToggleMenu,
   onOpenPlaylistDialog,
+  onOpenPlaylistDialogForTracks,
   onPlayNext,
+  onPlayNextTracks,
+  onRemoveTrack,
+  onRemoveTracks,
   openTrackMenuId,
 }: {
   playlists: Playlist[]
@@ -1172,19 +1468,30 @@ function PlaylistsView({
   selectedTrack: Track | null
   currentTrack: Track | null
   playbackStatus: PlaybackStatus
+  selectedTrackIds: number[]
   onNameChange: (name: string) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
   onSelectPlaylist: (id: number) => void
   onRenamePlaylist: (playlist: Playlist) => void
   onDeletePlaylist: (playlist: Playlist) => void
   onSelectTrack: (track: Track) => void
+  onToggleTrackSelected: (track: Track, checked: boolean) => void
+  onToggleAllTracks: (tracks: Track[], checked: boolean) => void
+  onPlayAll: (tracks: Track[]) => void
+  onPlaySelected: (tracks: Track[]) => void
   onPlayTrack: (track: Track) => void
   onToggleLike: (track: Track) => void
+  onBatchLike: (tracks: Track[], liked: boolean) => void
   onToggleMenu: (track: Track) => void
   onOpenPlaylistDialog: (track: Track) => void
+  onOpenPlaylistDialogForTracks: (tracks: Track[]) => void
   onPlayNext: (track: Track) => void
+  onPlayNextTracks: (tracks: Track[]) => void
+  onRemoveTrack: (track: Track) => void
+  onRemoveTracks: (tracks: Track[]) => void
   openTrackMenuId: number | null
 }) {
+  const selectedTracks = tracks.filter((track) => selectedTrackIds.includes(track.id))
   return (
     <section className="playlist-page" aria-label="歌单管理">
       <aside className="playlist-sidebar">
@@ -1241,19 +1548,35 @@ function PlaylistsView({
           )}
         </div>
 
+        <TrackListToolbar
+          tracks={tracks}
+          selectedTracks={selectedTracks}
+          canRemove={Boolean(selectedPlaylist)}
+          canClear={false}
+          onPlayAll={onPlayAll}
+          onPlaySelected={onPlaySelected}
+          onPlayNextTracks={onPlayNextTracks}
+          onOpenPlaylistDialogForTracks={onOpenPlaylistDialogForTracks}
+          onBatchLike={onBatchLike}
+          onRemoveTracks={onRemoveTracks}
+        />
+
         <PlaylistTrackTable
           tracks={tracks}
+          selectedTrackIds={selectedTrackIds}
           selectedTrack={selectedTrack}
           currentTrack={currentTrack}
           playbackStatus={playbackStatus}
           onSelectTrack={onSelectTrack}
+          onToggleTrackSelected={onToggleTrackSelected}
+          onToggleAllTracks={onToggleAllTracks}
           onPlayTrack={onPlayTrack}
           onToggleLike={onToggleLike}
           onToggleMenu={onToggleMenu}
           onOpenPlaylistDialog={onOpenPlaylistDialog}
           onPlayNext={onPlayNext}
+          onRemoveTrack={onRemoveTrack}
           openTrackMenuId={openTrackMenuId}
-          playlists={playlists}
         />
 
         {isLoading && <StateMessage title="正在读取歌单" body="稍等一下，阿言正在同步歌单数据。" />}
@@ -1271,16 +1594,26 @@ function SystemPlaylistView({
   selectedTrack,
   currentTrack,
   playbackStatus,
+  selectedTrackIds,
   isLoading,
   isError,
   emptyTitle,
   emptyBody,
   onSelectTrack,
+  onToggleTrackSelected,
+  onToggleAllTracks,
+  onPlayAll,
+  onPlaySelected,
   onPlayTrack,
   onToggleLike,
+  onBatchLike,
   onToggleMenu,
   onOpenPlaylistDialog,
+  onOpenPlaylistDialogForTracks,
   onPlayNext,
+  onPlayNextTracks,
+  onClearTracks,
+  isClearing = false,
   openTrackMenuId,
   playlists,
 }: {
@@ -1290,19 +1623,30 @@ function SystemPlaylistView({
   selectedTrack: Track | null
   currentTrack: Track | null
   playbackStatus: PlaybackStatus
+  selectedTrackIds: number[]
   isLoading: boolean
   isError: boolean
   emptyTitle: string
   emptyBody: string
   onSelectTrack: (track: Track) => void
+  onToggleTrackSelected: (track: Track, checked: boolean) => void
+  onToggleAllTracks: (tracks: Track[], checked: boolean) => void
+  onPlayAll: (tracks: Track[]) => void
+  onPlaySelected: (tracks: Track[]) => void
   onPlayTrack: (track: Track) => void
   onToggleLike: (track: Track) => void
+  onBatchLike: (tracks: Track[], liked: boolean) => void
   onToggleMenu: (track: Track) => void
   onOpenPlaylistDialog: (track: Track) => void
+  onOpenPlaylistDialogForTracks: (tracks: Track[]) => void
   onPlayNext: (track: Track) => void
+  onPlayNextTracks: (tracks: Track[]) => void
+  onClearTracks?: () => void
+  isClearing?: boolean
   openTrackMenuId: number | null
   playlists: Playlist[]
 }) {
+  const selectedTracks = tracks.filter((track) => selectedTrackIds.includes(track.id))
   return (
     <section className="system-playlist-page" aria-label={title}>
       <div className="now-summary">
@@ -1321,19 +1665,34 @@ function SystemPlaylistView({
           <h3>{title}</h3>
           <span>{tracks.length} 首</span>
         </div>
+        <TrackListToolbar
+          tracks={tracks}
+          selectedTracks={selectedTracks}
+          canRemove={false}
+          canClear={Boolean(onClearTracks)}
+          isClearing={isClearing}
+          onPlayAll={onPlayAll}
+          onPlaySelected={onPlaySelected}
+          onPlayNextTracks={onPlayNextTracks}
+          onOpenPlaylistDialogForTracks={onOpenPlaylistDialogForTracks}
+          onBatchLike={onBatchLike}
+          onClearTracks={onClearTracks}
+        />
         <PlaylistTrackTable
           tracks={tracks}
+          selectedTrackIds={selectedTrackIds}
           selectedTrack={selectedTrack}
           currentTrack={currentTrack}
           playbackStatus={playbackStatus}
           onSelectTrack={onSelectTrack}
+          onToggleTrackSelected={onToggleTrackSelected}
+          onToggleAllTracks={onToggleAllTracks}
           onPlayTrack={onPlayTrack}
           onToggleLike={onToggleLike}
           onToggleMenu={onToggleMenu}
           onOpenPlaylistDialog={onOpenPlaylistDialog}
           onPlayNext={onPlayNext}
           openTrackMenuId={openTrackMenuId}
-          playlists={playlists}
         />
         {isLoading && <StateMessage title="正在读取歌曲" body="稍等一下，阿言正在同步系统歌单。" />}
         {isError && <StateMessage title="系统歌单加载失败" body="请确认后端服务已启动，然后刷新页面。" tone="error" />}
@@ -1343,38 +1702,165 @@ function SystemPlaylistView({
   )
 }
 
+function TrackFilterBar({
+  sortField,
+  formatFilter,
+  likedOnly,
+  availableFormats,
+  onSortFieldChange,
+  onFormatFilterChange,
+  onLikedOnlyChange,
+}: {
+  sortField: TrackSortField
+  formatFilter: string
+  likedOnly: boolean
+  availableFormats: string[]
+  onSortFieldChange: (field: TrackSortField) => void
+  onFormatFilterChange: (format: string) => void
+  onLikedOnlyChange: (likedOnly: boolean) => void
+}) {
+  return (
+    <div className="track-filter-bar">
+      <label>
+        排序
+        <select value={sortField} onChange={(event) => onSortFieldChange(event.target.value as TrackSortField)}>
+          <option value="title">标题</option>
+          <option value="artist">艺术家</option>
+          <option value="album">专辑</option>
+          <option value="duration">时长</option>
+          <option value="format">格式</option>
+        </select>
+      </label>
+      <label>
+        格式
+        <select value={formatFilter} onChange={(event) => onFormatFilterChange(event.target.value)}>
+          <option value="">全部</option>
+          {availableFormats.map((format) => (
+            <option key={format} value={format}>
+              {format.toUpperCase()}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="inline-check">
+        <input type="checkbox" checked={likedOnly} onChange={(event) => onLikedOnlyChange(event.target.checked)} />
+        仅看我喜欢
+      </label>
+    </div>
+  )
+}
+
+function TrackListToolbar({
+  tracks,
+  selectedTracks,
+  canRemove,
+  canClear,
+  isClearing = false,
+  onPlayAll,
+  onPlaySelected,
+  onPlayNextTracks,
+  onOpenPlaylistDialogForTracks,
+  onBatchLike,
+  onRemoveTracks,
+  onClearTracks,
+}: {
+  tracks: Track[]
+  selectedTracks: Track[]
+  canRemove: boolean
+  canClear: boolean
+  isClearing?: boolean
+  onPlayAll: (tracks: Track[]) => void
+  onPlaySelected: (tracks: Track[]) => void
+  onPlayNextTracks: (tracks: Track[]) => void
+  onOpenPlaylistDialogForTracks: (tracks: Track[]) => void
+  onBatchLike: (tracks: Track[], liked: boolean) => void
+  onRemoveTracks?: (tracks: Track[]) => void
+  onClearTracks?: () => void
+}) {
+  const hasSelection = selectedTracks.length > 0
+  return (
+    <div className="track-toolbar">
+      <button type="button" className="primary-button" disabled={!tracks.length} onClick={() => onPlayAll(tracks)}>
+        <Play size={15} fill="currentColor" />
+        播放全部
+      </button>
+      <span>{hasSelection ? `已选 ${selectedTracks.length} 首` : '未选择歌曲'}</span>
+      <button type="button" disabled={!hasSelection} onClick={() => onPlaySelected(selectedTracks)}>
+        播放选中
+      </button>
+      <button type="button" disabled={!hasSelection} onClick={() => onPlayNextTracks(selectedTracks)}>
+        下一首播放
+      </button>
+      <button type="button" disabled={!hasSelection} onClick={() => onOpenPlaylistDialogForTracks(selectedTracks)}>
+        添加到歌单
+      </button>
+      <button type="button" disabled={!hasSelection} onClick={() => onBatchLike(selectedTracks, true)}>
+        收藏
+      </button>
+      <button type="button" disabled={!hasSelection} onClick={() => onBatchLike(selectedTracks, false)}>
+        取消收藏
+      </button>
+      {canRemove && (
+        <button type="button" className="danger" disabled={!hasSelection || !onRemoveTracks} onClick={() => onRemoveTracks?.(selectedTracks)}>
+          移出歌单
+        </button>
+      )}
+      {canClear && (
+        <button type="button" className="danger" disabled={!tracks.length || isClearing || !onClearTracks} onClick={onClearTracks}>
+          清空最近播放
+        </button>
+      )}
+    </div>
+  )
+}
+
 function PlaylistTrackTable({
   tracks,
+  selectedTrackIds,
   selectedTrack,
   currentTrack,
   playbackStatus,
   onSelectTrack,
+  onToggleTrackSelected,
+  onToggleAllTracks,
   onPlayTrack,
   onToggleLike,
   onToggleMenu,
   onOpenPlaylistDialog,
   onPlayNext,
+  onRemoveTrack,
   openTrackMenuId,
-  playlists,
 }: {
   tracks: Track[]
+  selectedTrackIds: number[]
   selectedTrack: Track | null
   currentTrack: Track | null
   playbackStatus: PlaybackStatus
   onSelectTrack: (track: Track) => void
+  onToggleTrackSelected: (track: Track, checked: boolean) => void
+  onToggleAllTracks: (tracks: Track[], checked: boolean) => void
   onPlayTrack: (track: Track) => void
   onToggleLike: (track: Track) => void
   onToggleMenu: (track: Track) => void
   onOpenPlaylistDialog: (track: Track) => void
   onPlayNext: (track: Track) => void
+  onRemoveTrack?: (track: Track) => void
   openTrackMenuId: number | null
-  playlists: Playlist[]
 }) {
+  const allSelected = tracks.length > 0 && tracks.every((track) => selectedTrackIds.includes(track.id))
   return (
     <div className="table-scroll">
       <table className="track-table">
         <thead>
           <tr>
+            <th>
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={(event) => onToggleAllTracks(tracks, event.target.checked)}
+                aria-label="选择当前列表全部歌曲"
+              />
+            </th>
             <th>播放</th>
             <th>标题</th>
             <th>艺术家</th>
@@ -1390,10 +1876,19 @@ function PlaylistTrackTable({
           {tracks.map((track) => (
             <tr
               key={track.id}
-              className={trackRowClass(track, selectedTrack, currentTrack, playbackStatus)}
+              className={trackRowClass(track, selectedTrack, currentTrack, playbackStatus, selectedTrackIds.includes(track.id))}
               onClick={() => onSelectTrack(track)}
               onDoubleClick={() => onPlayTrack(track)}
             >
+              <td>
+                <input
+                  type="checkbox"
+                  checked={selectedTrackIds.includes(track.id)}
+                  onChange={(event) => onToggleTrackSelected(track, event.target.checked)}
+                  onClick={(event) => event.stopPropagation()}
+                  aria-label={`选择 ${track.title}`}
+                />
+              </td>
               <td>
                 <button
                   type="button"
@@ -1455,6 +1950,11 @@ function PlaylistTrackTable({
                     <button type="button" onClick={() => onPlayNext(track)}>
                       下一首播放
                     </button>
+                    {onRemoveTrack && (
+                      <button type="button" onClick={() => onRemoveTrack(track)}>
+                        移出歌单
+                      </button>
+                    )}
                   </div>
                 )}
               </td>
@@ -1699,6 +2199,8 @@ function playModeLabel(mode: PlayMode) {
       return '列表循环'
     case 'shuffle':
       return '随机播放'
+    case 'single':
+      return '单曲循环'
   }
 }
 
@@ -1717,8 +2219,11 @@ function viewTitle(view: ViewMode) {
   }
 }
 
-function trackRowClass(track: Track, selectedTrack: Track | null, currentTrack: Track | null, status: PlaybackStatus) {
+function trackRowClass(track: Track, selectedTrack: Track | null, currentTrack: Track | null, status: PlaybackStatus, checked: boolean) {
   const classes: string[] = []
+  if (checked) {
+    classes.push('checked')
+  }
   if (selectedTrack?.id === track.id) {
     classes.push('selected')
   }
@@ -1730,6 +2235,64 @@ function trackRowClass(track: Track, selectedTrack: Track | null, currentTrack: 
 
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
+}
+
+function sortTracks(tracks: Track[], field: TrackSortField) {
+  return [...tracks].sort((a, b) => {
+    if (field === 'duration') {
+      return a.durationMs - b.durationMs || compareText(a.title, b.title)
+    }
+    return compareText(trackSortValue(a, field), trackSortValue(b, field)) || compareText(a.title, b.title)
+  })
+}
+
+function trackSortValue(track: Track, field: TrackSortField) {
+  switch (field) {
+    case 'title':
+      return track.title
+    case 'artist':
+      return displayArtist(track)
+    case 'album':
+      return displayAlbum(track)
+    case 'format':
+      return track.format
+    case 'duration':
+      return String(track.durationMs)
+  }
+}
+
+function compareText(a: string, b: string) {
+  return a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base', numeric: true })
+}
+
+function readStoredPlayerState(): StoredPlayerState {
+  try {
+    const raw = window.localStorage.getItem(playerStorageKey)
+    if (!raw) {
+      return {}
+    }
+    const parsed = JSON.parse(raw) as StoredPlayerState
+    return {
+      volume: typeof parsed.volume === 'number' ? clampVolume(parsed.volume) : undefined,
+      playMode: isPlayMode(parsed.playMode) ? parsed.playMode : undefined,
+      queueTrackIds: Array.isArray(parsed.queueTrackIds) ? parsed.queueTrackIds.filter((id) => typeof id === 'number') : undefined,
+      currentTrackId: typeof parsed.currentTrackId === 'number' ? parsed.currentTrackId : null,
+    }
+  } catch {
+    return {}
+  }
+}
+
+function writeStoredPlayerState(state: StoredPlayerState) {
+  window.localStorage.setItem(playerStorageKey, JSON.stringify(state))
+}
+
+function clampVolume(value: number) {
+  return Math.min(100, Math.max(0, Math.round(value)))
+}
+
+function isPlayMode(value: unknown): value is PlayMode {
+  return value === 'sequence' || value === 'loop' || value === 'shuffle' || value === 'single'
 }
 
 export default App

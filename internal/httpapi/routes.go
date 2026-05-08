@@ -40,6 +40,7 @@ type Storage interface {
 	LikeTrack(ctx context.Context, trackID int64) error
 	UnlikeTrack(ctx context.Context, trackID int64) error
 	RecordRecentPlay(ctx context.Context, trackID int64) error
+	ClearRecentPlays(ctx context.Context) error
 }
 
 type Scanner interface {
@@ -73,6 +74,7 @@ func (s *Server) Routes() http.Handler {
 	r.Delete("/api/playlists/{id}/tracks/{trackId}", s.handleRemovePlaylistTrack)
 	r.Get("/api/playlists/liked/tracks", s.handleLikedTracks)
 	r.Get("/api/playlists/recent/tracks", s.handleRecentTracks)
+	r.Delete("/api/playlists/recent/tracks", s.handleClearRecentTracks)
 	r.Post("/api/tracks/{id}/like", s.handleLikeTrack)
 	r.Delete("/api/tracks/{id}/like", s.handleUnlikeTrack)
 	r.Post("/api/tracks/{id}/recent-play", s.handleRecordRecentPlay)
@@ -365,6 +367,14 @@ func (s *Server) handleRecentTracks(w http.ResponseWriter, r *http.Request) {
 	s.writeTracks(w, r, func() ([]storage.Track, error) {
 		return s.storage.ListSystemPlaylistTracks(r.Context(), "recent")
 	})
+}
+
+func (s *Server) handleClearRecentTracks(w http.ResponseWriter, r *http.Request) {
+	if err := s.storage.ClearRecentPlays(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleLikeTrack(w http.ResponseWriter, r *http.Request) {
