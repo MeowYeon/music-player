@@ -2,21 +2,17 @@
 
 ## Environment
 
-- Work in Debian WSL by default.
-- Preferred command shape:
-  `wsl -d Debian --cd /home/ghp/space/ai/music <command>`
+- Codex already runs inside the target development environment.
+- Run commands directly from the project root: `/home/ghp/space/ai/music`.
 
 ## Project
 
-- Product name: Ayan / 阿言.
+- Product name: 聆听.
 - Backend language: Go.
 - Frontend code lives in `web/`.
-- Keep the MVP simple and aligned with `docs/design/architecture.md`.
-- Do not add database migration tooling, sqlc, desktop shell code, cover art, lyrics, playlists, or realtime file watching in the MVP unless the design is updated first.
-
-## Git
-
-- Keep changes small and commit each complete functional unit.
+- v0.5 closed the MVP phase. v0.6 starts the mature product direction.
+- Current architecture source of truth: `docs/design/architecture.md`.
+- Project memory and documentation map: `docs/memory.md` and `docs/README.md`.
 
 ## Dev services
 
