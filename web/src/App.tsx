@@ -828,9 +828,7 @@ function App() {
               openTrackMenuId={openTrackMenuId}
             />
         ) : view === 'liked' ? (
-          <SystemPlaylistView
-            title="我喜欢"
-            body="收藏过的歌曲会固定出现在这里。"
+          <LikedTracksView
             tracks={likedTracks}
             selectedTrack={selectedTrack}
             currentTrack={currentTrack}
@@ -838,12 +836,11 @@ function App() {
             selectedTrackIds={selectedTrackIds}
             isLoading={likedTracksQuery.isLoading}
             isError={likedTracksQuery.isError}
-            emptyTitle="还没有喜欢的歌曲"
-            emptyBody="在歌曲列表中点亮收藏按钮后，这里会显示它们。"
             onSelectTrack={handleSelectTrack}
             onToggleTrackSelected={handleToggleTrackSelected}
             onToggleAllTracks={handleToggleAllTracks}
             onPlayAll={handlePlayTrackList}
+            onShuffleAll={handleShuffleTrackList}
             onPlaySelected={handlePlayTrackList}
             onPlayTrack={handlePlayTrackFromList}
             onToggleLike={handleToggleLike}
@@ -854,7 +851,6 @@ function App() {
             onPlayNext={handlePlayNext}
             onPlayNextTracks={handlePlayNextTracks}
             openTrackMenuId={openTrackMenuId}
-            playlists={playlists}
           />
         ) : (
           <RecentPlaysView
@@ -1504,9 +1500,7 @@ function PlaylistsView({
   )
 }
 
-function SystemPlaylistView({
-  title,
-  body,
+function LikedTracksView({
   tracks,
   selectedTrack,
   currentTrack,
@@ -1514,12 +1508,12 @@ function SystemPlaylistView({
   selectedTrackIds,
   isLoading,
   isError,
-  emptyTitle,
-  emptyBody,
+  openTrackMenuId,
   onSelectTrack,
   onToggleTrackSelected,
   onToggleAllTracks,
   onPlayAll,
+  onShuffleAll,
   onPlaySelected,
   onPlayTrack,
   onToggleLike,
@@ -1529,13 +1523,7 @@ function SystemPlaylistView({
   onOpenPlaylistDialogForTracks,
   onPlayNext,
   onPlayNextTracks,
-  onClearTracks,
-  isClearing = false,
-  openTrackMenuId,
-  playlists,
 }: {
-  title: string
-  body: string
   tracks: Track[]
   selectedTrack: Track | null
   currentTrack: Track | null
@@ -1543,12 +1531,12 @@ function SystemPlaylistView({
   selectedTrackIds: number[]
   isLoading: boolean
   isError: boolean
-  emptyTitle: string
-  emptyBody: string
+  openTrackMenuId: number | null
   onSelectTrack: (track: Track) => void
   onToggleTrackSelected: (track: Track, checked: boolean) => void
   onToggleAllTracks: (tracks: Track[], checked: boolean) => void
   onPlayAll: (tracks: Track[]) => void
+  onShuffleAll: (tracks: Track[]) => void
   onPlaySelected: (tracks: Track[]) => void
   onPlayTrack: (track: Track) => void
   onToggleLike: (track: Track) => void
@@ -1558,43 +1546,58 @@ function SystemPlaylistView({
   onOpenPlaylistDialogForTracks: (tracks: Track[]) => void
   onPlayNext: (track: Track) => void
   onPlayNextTracks: (tracks: Track[]) => void
-  onClearTracks?: () => void
-  isClearing?: boolean
-  openTrackMenuId: number | null
-  playlists: Playlist[]
 }) {
   const selectedTracks = tracks.filter((track) => selectedTrackIds.includes(track.id))
+  const likedArtists = new Set(tracks.map((track) => track.artist).filter(Boolean)).size
+
   return (
-    <section className="system-playlist-page" aria-label={title}>
-      <div className="now-summary">
-        <div>
-          <span className="eyebrow">系统歌单</span>
-          <h2>{title}</h2>
-          <p>{body}</p>
+    <section className="system-playlist-page liked-page" aria-label="我喜欢">
+      <div className="liked-hero">
+        <div className="liked-hero-copy">
+          <span className="eyebrow">收藏集合</span>
+          <h2>我喜欢的声音</h2>
+          <p>这里是你主动点亮的歌曲集合。主操作保持简单：直接播放、随机播放，或把不再喜欢的歌移出收藏。</p>
+          <div className="songs-hero-actions">
+            <button type="button" className="primary-button" onClick={() => onPlayAll(tracks)} disabled={!tracks.length}>
+              <Play size={17} fill="currentColor" />
+              播放收藏
+            </button>
+            <button type="button" className="secondary-button" onClick={() => onShuffleAll(tracks)} disabled={!tracks.length}>
+              <Shuffle size={17} />
+              随机播放
+            </button>
+            <button type="button" className="secondary-button danger-soft" onClick={() => onBatchLike(tracks, false)} disabled={!tracks.length}>
+              <Heart size={17} />
+              全部取消喜欢
+            </button>
+          </div>
         </div>
-        <div className="system-glyph" aria-hidden="true">
-          {title === '我喜欢' ? <Heart size={32} /> : <History size={32} />}
+        <div className="liked-summary" aria-label="收藏摘要">
+          <div className="liked-heart"><Heart size={34} fill="currentColor" /></div>
+          <div><strong>{tracks.length}</strong><span>收藏歌曲</span></div>
+          <div><strong>{likedArtists}</strong><span>艺术家</span></div>
         </div>
       </div>
 
       <div className="table-wrap">
         <div className="table-header">
-          <h3>{title}</h3>
+          <h3>收藏列表</h3>
           <span>{tracks.length} 首</span>
         </div>
-        <TrackListToolbar
-          tracks={tracks}
-          selectedTracks={selectedTracks}
-          canRemove={false}
-          canClear={Boolean(onClearTracks)}
-          isClearing={isClearing}
-          onPlayAll={onPlayAll}
-          onPlaySelected={onPlaySelected}
-          onPlayNextTracks={onPlayNextTracks}
-          onOpenPlaylistDialogForTracks={onOpenPlaylistDialogForTracks}
-          onBatchLike={onBatchLike}
-          onClearTracks={onClearTracks}
-        />
+        {selectedTracks.length > 0 && (
+          <TrackListToolbar
+            tracks={tracks}
+            selectedTracks={selectedTracks}
+            canRemove={false}
+            canClear={false}
+            showPlayAll={false}
+            onPlayAll={onPlayAll}
+            onPlaySelected={onPlaySelected}
+            onPlayNextTracks={onPlayNextTracks}
+            onOpenPlaylistDialogForTracks={onOpenPlaylistDialogForTracks}
+            onBatchLike={onBatchLike}
+          />
+        )}
         <PlaylistTrackTable
           tracks={tracks}
           selectedTrackIds={selectedTrackIds}
@@ -1611,9 +1614,9 @@ function SystemPlaylistView({
           onPlayNext={onPlayNext}
           openTrackMenuId={openTrackMenuId}
         />
-        {isLoading && <StateMessage title="正在读取歌曲" body="稍等一下，聆听正在同步系统歌单。" />}
-        {isError && <StateMessage title="系统歌单加载失败" body="请确认后端服务已启动，然后刷新页面。" tone="error" />}
-        {!isLoading && !isError && !tracks.length && <StateMessage title={emptyTitle} body={emptyBody} />}
+        {isLoading && <StateMessage title="正在读取我喜欢" body="稍等一下，聆听正在同步收藏集合。" />}
+        {isError && <StateMessage title="我喜欢加载失败" body="请确认后端服务已启动，然后刷新页面。" tone="error" />}
+        {!isLoading && !isError && !tracks.length && <StateMessage title="还没有喜欢的歌曲" body="在歌曲列表中点亮收藏按钮后，这里会显示它们。" />}
       </div>
     </section>
   )
