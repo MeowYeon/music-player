@@ -62,6 +62,7 @@ import {
   type StoredPlayerState,
 } from './player'
 import { formatDurationSeconds, playModeLabel, type PlaybackStatus } from './playback'
+import { calculateLibraryProgress, recentItemsToTracks, shouldJumpToSongsForGlobalSearch } from './interface-flows'
 import { displayArtist, sortTracks, type TrackSortField } from './tracks'
 
 const defaultLibraryPath = '/mnt/c/Users/guohp/Music/test'
@@ -287,7 +288,7 @@ function App() {
   const activePlaylistTracks = playlistTracksQuery.data ?? []
   const likedTracks = likedTracksQuery.data ?? []
   const recentTrackItems = recentTracksQuery.data ?? []
-  const recentTracks = recentTrackItems.map((item) => item.track)
+  const recentTracks = recentItemsToTracks(recentTrackItems)
   const allKnownTracks = useMemo(() => {
     const byID = new Map<number, Track>()
     for (const track of [...tracks, ...activePlaylistTracks, ...likedTracks, ...recentTracks, ...queue]) {
@@ -720,7 +721,7 @@ function App() {
 
   function handleGlobalSearchChange(value: string) {
     setQuery(value)
-    if (value.trim() && view !== 'songs') {
+    if (shouldJumpToSongsForGlobalSearch(view, value)) {
       setView('songs')
     }
   }
@@ -1880,7 +1881,7 @@ function LibraryCard({
   onDelete: (library: LibraryItem) => void
   onToggleMenu: (library: LibraryItem) => void
 }) {
-  const progress = library.scan.totalFiles > 0 ? Math.round((library.scan.scannedFiles / library.scan.totalFiles) * 100) : 0
+  const progress = calculateLibraryProgress(library.scan.scannedFiles, library.scan.totalFiles)
   const active = isActiveScan(library.scan.status)
   const Icon = library.scan.status === 'completed' ? CheckCircle2 : library.scan.status === 'failed' ? XCircle : Clock3
 
