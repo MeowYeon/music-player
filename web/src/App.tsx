@@ -1256,17 +1256,20 @@ function SongsView({
           onLikedOnlyChange={onLikedOnlyChange}
         />
 
-        <TrackListToolbar
-          tracks={tracks}
-          selectedTracks={selectedTracks}
-          canRemove={false}
-          canClear={false}
-          onPlayAll={onPlayAll}
-          onPlaySelected={onPlaySelected}
-          onPlayNextTracks={onPlayNextTracks}
-          onOpenPlaylistDialogForTracks={onOpenPlaylistDialogForTracks}
-          onBatchLike={onBatchLike}
-        />
+        {selectedTracks.length > 0 && (
+          <TrackListToolbar
+            tracks={tracks}
+            selectedTracks={selectedTracks}
+            canRemove={false}
+            canClear={false}
+            showPlayAll={false}
+            onPlayAll={onPlayAll}
+            onPlaySelected={onPlaySelected}
+            onPlayNextTracks={onPlayNextTracks}
+            onOpenPlaylistDialogForTracks={onOpenPlaylistDialogForTracks}
+            onBatchLike={onBatchLike}
+          />
+        )}
 
         <PlaylistTrackTable
           tracks={tracks}
@@ -1659,6 +1662,7 @@ function TrackListToolbar({
   selectedTracks,
   canRemove,
   canClear,
+  showPlayAll = true,
   isClearing = false,
   onPlayAll,
   onPlaySelected,
@@ -1672,6 +1676,7 @@ function TrackListToolbar({
   selectedTracks: Track[]
   canRemove: boolean
   canClear: boolean
+  showPlayAll?: boolean
   isClearing?: boolean
   onPlayAll: (tracks: Track[]) => void
   onPlaySelected: (tracks: Track[]) => void
@@ -1683,12 +1688,14 @@ function TrackListToolbar({
 }) {
   const hasSelection = selectedTracks.length > 0
   return (
-    <div className="track-toolbar">
-      <button type="button" className="primary-button" disabled={!tracks.length} onClick={() => onPlayAll(tracks)}>
-        <Play size={15} fill="currentColor" />
-        播放全部
-      </button>
-      <span>{hasSelection ? `已选 ${selectedTracks.length} 首` : '未选择歌曲'}</span>
+    <div className={`track-toolbar ${hasSelection ? 'selection-toolbar' : ''}`}>
+      {showPlayAll && (
+        <button type="button" className="primary-button" disabled={!tracks.length} onClick={() => onPlayAll(tracks)}>
+          <Play size={15} fill="currentColor" />
+          播放全部
+        </button>
+      )}
+      <span>{hasSelection ? `已选 ${selectedTracks.length} 首，批量操作已就绪` : '未选择歌曲'}</span>
       <button type="button" disabled={!hasSelection} onClick={() => onPlaySelected(selectedTracks)}>
         播放选中
       </button>

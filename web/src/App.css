@@ -81,9 +81,11 @@ svg { display: block; stroke-width: 2; }
 .track-filter-bar, .track-toolbar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; }
 .track-filter-bar { flex-wrap: wrap; border-bottom: 1px solid var(--soft-line); background: rgba(251,252,248,.72); }
 .track-toolbar { overflow-x: auto; border-bottom: 1px solid var(--soft-line); background: #fffdf7; }
+.track-toolbar.selection-toolbar { position: sticky; top: 0; z-index: 2; border-bottom-color: rgba(15,135,100,.18); background: linear-gradient(90deg, rgba(226,242,235,.96), rgba(255,253,247,.96)); box-shadow: 0 10px 24px rgba(27,37,34,.06); }
 .track-filter-bar label, .inline-check { display: inline-flex; align-items: center; gap: 8px; color: #56615b; font-size: 13px; font-weight: 720; }
 .track-filter-bar select, .create-playlist-box input, .scan-form input, .library-toolbar input, .playlist-form input { height: 34px; min-width: 0; border: 1px solid var(--line); border-radius: 8px; outline: 0; background: #fffefa; color: var(--ink); padding: 0 10px; }
 .track-toolbar span { flex: 0 0 auto; color: #717b76; font-size: 13px; }
+.track-toolbar.selection-toolbar span { color: var(--pine); font-weight: 820; }
 .track-toolbar button, .primary-button, .modal-actions .primary-button, .modal-actions .secondary-button, .create-playlist-box button { display: inline-flex; height: 34px; align-items: center; justify-content: center; gap: 6px; border: 0; border-radius: 8px; font-size: 13px; font-weight: 760; white-space: nowrap; padding: 0 12px; }
 .track-toolbar button, .modal-actions .secondary-button { background: #edf1ee; color: #3f4944; }
 .track-toolbar button.primary-button, .primary-button, .modal-actions .primary-button, .create-playlist-box button { background: var(--mint); color: #fff; }
