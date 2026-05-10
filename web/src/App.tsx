@@ -1382,10 +1382,10 @@ function PlaylistsView({
   return (
     <section className="playlist-page playlist-workbench-page" aria-label="歌单管理">
       <aside className="playlist-workbench-sidebar">
-        <form className="playlist-quick-create" onSubmit={onSubmit}>
+        <form className="playlist-quiet-create" onSubmit={onSubmit}>
           <div>
-            <span className="eyebrow">新建歌单</span>
-            <strong>创建听歌场景</strong>
+            <span className="eyebrow">歌单架</span>
+            <strong>新建普通歌单</strong>
           </div>
           <label htmlFor="playlist-name" className="sr-only">歌单名称</label>
           <div className="quick-create-row">
@@ -1447,10 +1447,14 @@ function PlaylistsView({
         <div className="playlist-detail-heading">
           <div>
             <h3>{selectedPlaylist?.name ?? '选择一个歌单'}</h3>
-            <p>{selectedPlaylist ? `${selectedPlaylist.trackCount} 首歌曲 · 按添加时间排序` : '普通歌单不会包含我喜欢和最近播放'}</p>
+            <p>{selectedPlaylist ? `${tracks.length} 首歌曲 · 当前歌单工作台` : '左侧选择歌单后，在这里播放、重命名或整理歌曲。'}</p>
           </div>
           {selectedPlaylist && (
             <div className="row-actions playlist-actions">
+              <button type="button" className="primary-button" onClick={() => onPlayAll(tracks)} disabled={!tracks.length} title="播放歌单" aria-label="播放歌单">
+                <Play size={15} fill="currentColor" />
+                播放
+              </button>
               <button type="button" onClick={() => onRenamePlaylist(selectedPlaylist)} disabled={isMutating} title="重命名" aria-label="重命名">
                 <RefreshCw size={15} />
               </button>
