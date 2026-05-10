@@ -83,3 +83,51 @@ func TestClearRecentPlaysOnlyClearsRecentPlaylist(t *testing.T) {
 		t.Fatalf("expected normal playlist track to remain, got %d", len(playlistTracks))
 	}
 }
+
+func TestListRecentTrackItemsIncludesLastPlayedAt(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(ctx, filepath.Join(t.TempDir(), "music.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+
+	library, err := store.CreateLibrary(ctx, t.TempDir())
+	if err != nil {
+		t.Fatalf("create library: %v", err)
+	}
+	input := MusicInput{
+		Path:       filepath.Join(t.TempDir(), "recent.mp3"),
+		Title:      "Recent",
+		Artist:     "Artist",
+		Album:      "Album",
+		DurationMS: 90000,
+		Format:     "mp3",
+		SizeBytes:  1234,
+		MTimeUnix:  1700000000,
+	}
+	if err := store.ReplaceMusicForLibrary(ctx, library.ID, []MusicInput{input}); err != nil {
+		t.Fatalf("replace music: %v", err)
+	}
+	tracks, err := store.ListTracks(ctx, "")
+	if err != nil {
+		t.Fatalf("list tracks: %v", err)
+	}
+	if err := store.RecordRecentPlay(ctx, tracks[0].ID); err != nil {
+		t.Fatalf("record recent play: %v", err)
+	}
+
+	items, err := store.ListRecentTrackItems(ctx)
+	if err != nil {
+		t.Fatalf("list recent track items: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 recent item, got %d", len(items))
+	}
+	if items[0].Track.ID != tracks[0].ID {
+		t.Fatalf("expected track id %d, got %d", tracks[0].ID, items[0].Track.ID)
+	}
+	if items[0].LastPlayedAt == "" {
+		t.Fatal("expected last played timestamp")
+	}
+}

@@ -36,6 +36,11 @@ export type Track = {
   liked: boolean
 }
 
+export type RecentTrackItem = {
+  track: Track
+  lastPlayedAt: string
+}
+
 export type PlaylistType = 'normal' | 'liked' | 'recent'
 
 export type Playlist = {
@@ -292,8 +297,14 @@ export async function getLikedTracks(): Promise<Track[]> {
   return withMockFallback(() => request<Track[]>('/api/playlists/liked/tracks'), mockTracks.filter((track) => track.liked))
 }
 
-export async function getRecentTracks(): Promise<Track[]> {
-  return withMockFallback(() => request<Track[]>('/api/playlists/recent/tracks'), mockTracks.slice().reverse())
+export async function getRecentTracks(): Promise<RecentTrackItem[]> {
+  return withMockFallback(
+    () => request<RecentTrackItem[]>('/api/playlists/recent/tracks'),
+    mockTracks.slice().reverse().map((track, index) => ({
+      track,
+      lastPlayedAt: new Date(Date.now() - index * 1000 * 60 * 18).toISOString(),
+    })),
+  )
 }
 
 export async function clearRecentTracks(): Promise<void> {

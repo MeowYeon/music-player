@@ -37,6 +37,7 @@ type Storage interface {
 	AddTrackToPlaylist(ctx context.Context, playlistID int64, trackID int64) error
 	RemoveTrackFromPlaylist(ctx context.Context, playlistID int64, trackID int64) error
 	ListSystemPlaylistTracks(ctx context.Context, playlistType string) ([]storage.Track, error)
+	ListRecentTrackItems(ctx context.Context) ([]storage.RecentTrackItem, error)
 	LikeTrack(ctx context.Context, trackID int64) error
 	UnlikeTrack(ctx context.Context, trackID int64) error
 	RecordRecentPlay(ctx context.Context, trackID int64) error
@@ -364,9 +365,23 @@ func (s *Server) handleLikedTracks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRecentTracks(w http.ResponseWriter, r *http.Request) {
-	s.writeTracks(w, r, func() ([]storage.Track, error) {
-		return s.storage.ListSystemPlaylistTracks(r.Context(), "recent")
-	})
+	items, err := s.storage.ListRecentTrackItems(r.Context())
+	if errors.Is(err, storage.ErrNotFound) {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	response := make([]recentTrackItemResponse, 0, len(items))
+	for _, item := range items {
+		response = append(response, recentTrackItemResponse{
+			Track:        trackResponseFromStorage(item.Track),
+			LastPlayedAt: item.LastPlayedAt,
+		})
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) handleClearRecentTracks(w http.ResponseWriter, r *http.Request) {
@@ -525,6 +540,11 @@ type trackResponse struct {
 	DurationMS int64  `json:"durationMs"`
 	Format     string `json:"format"`
 	Liked      bool   `json:"liked"`
+}
+
+type recentTrackItemResponse struct {
+	Track        trackResponse `json:"track"`
+	LastPlayedAt string        `json:"lastPlayedAt"`
 }
 
 type playlistResponse struct {
