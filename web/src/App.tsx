@@ -102,6 +102,7 @@ function App() {
   const [duration, setDuration] = useState(0)
   const [volume, setVolume] = useState(storedPlayerStateRef.current.volume ?? 72)
   const [isVolumeOpen, setIsVolumeOpen] = useState(false)
+  const [isMobilePlayerExpanded, setIsMobilePlayerExpanded] = useState(false)
 
   const librarySummaryQuery = useQuery({
     queryKey: ['library'],
@@ -885,7 +886,14 @@ function App() {
         )}
       </AppShell>
 
-      <footer className="player-bar">
+      <footer
+        className={`player-bar ${isMobilePlayerExpanded ? 'mobile-expanded' : ''}`}
+        onClick={() => {
+          if (window.innerWidth <= 760 && !isMobilePlayerExpanded) {
+            setIsMobilePlayerExpanded(true)
+          }
+        }}
+      >
         <div className="player-track">
           <div className="track-glyph">
             <AudioLines size={18} />
@@ -895,6 +903,19 @@ function App() {
             <span>{currentTrack ? displayArtist(currentTrack) : '选择歌曲后开始播放'}</span>
           </div>
         </div>
+
+        <button
+          type="button"
+          className="mobile-player-collapse"
+          aria-label="收起播放器"
+          title="收起播放器"
+          onClick={(event) => {
+            event.stopPropagation()
+            setIsMobilePlayerExpanded(false)
+          }}
+        >
+          <X size={16} />
+        </button>
 
         <div className="player-controls">
           <button type="button" aria-label="上一首" disabled={!canUsePrevious} onClick={handlePreviousTrack} title="上一首">
