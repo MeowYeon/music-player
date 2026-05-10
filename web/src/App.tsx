@@ -7,6 +7,7 @@ import {
   Heart,
   History,
   ListMusic,
+  MoreHorizontal,
   Pause,
   Play,
   Plus,
@@ -83,6 +84,7 @@ function App() {
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null)
   const [selectedTrackIds, setSelectedTrackIds] = useState<number[]>([])
   const [openTrackMenuId, setOpenTrackMenuId] = useState<number | null>(null)
+  const [openLibraryMenuId, setOpenLibraryMenuId] = useState<number | null>(null)
   const [playlistDialogTracks, setPlaylistDialogTracks] = useState<Track[]>([])
   const [playlistDialogPlaylistId, setPlaylistDialogPlaylistId] = useState<number | null>(null)
   const [playlistDialogName, setPlaylistDialogName] = useState('')
@@ -790,6 +792,8 @@ function App() {
             onSubmit={handleLibrarySubmit}
             onScan={handleScanLibrary}
             onDelete={handleDeleteLibrary}
+            openLibraryMenuId={openLibraryMenuId}
+            onToggleLibraryMenu={(library) => setOpenLibraryMenuId((id) => (id === library.id ? null : library.id))}
           />
         ) : view === 'playlists' ? (
           <PlaylistsView
@@ -1754,10 +1758,12 @@ function LibrariesView({
   isDeleting,
   isLoading,
   isError,
+  openLibraryMenuId,
   onPathChange,
   onSubmit,
   onScan,
   onDelete,
+  onToggleLibraryMenu,
 }: {
   libraries: LibraryItem[]
   libraryPath: string
@@ -1768,11 +1774,16 @@ function LibrariesView({
   isDeleting: boolean
   isLoading: boolean
   isError: boolean
+  openLibraryMenuId: number | null
   onPathChange: (path: string) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
   onScan: (library: LibraryItem) => void
   onDelete: (library: LibraryItem) => void
+  onToggleLibraryMenu: (library: LibraryItem) => void
 }) {
+  const totalTracks = libraries.reduce((count, library) => count + library.musicCount, 0)
+  const activeLibraries = libraries.filter((library) => isActiveScan(library.scan.status)).length
+
   return (
     <section className="libraries-page" aria-label="媒体库管理">
       <form className="library-toolbar" onSubmit={onSubmit}>
@@ -1791,37 +1802,33 @@ function LibrariesView({
         {(formError || Boolean(createError)) && <p className="form-error">{formError || errorMessage(createError, '媒体库添加失败。')}</p>}
       </form>
 
-      <div className="libraries-wrap">
-        <div className="table-header">
-          <h3>媒体库</h3>
-          <span>{libraries.length} 个</span>
+      <div className="library-card-shell">
+        <div className="library-card-heading">
+          <div>
+            <span className="eyebrow">媒体库</span>
+            <h2>低频管理，清晰状态</h2>
+            <p>每个目录以卡片呈现路径、歌曲数、扫描进度和错误信息；删除入口收进更多菜单，避免误触。</p>
+          </div>
+          <div className="library-card-metrics">
+            <div><strong>{libraries.length}</strong><span>目录</span></div>
+            <div><strong>{totalTracks}</strong><span>歌曲</span></div>
+            <div><strong>{activeLibraries}</strong><span>扫描中</span></div>
+          </div>
         </div>
 
-        <div className="table-scroll">
-          <table className="library-table">
-            <thead>
-              <tr>
-                <th>目录</th>
-                <th>歌曲数</th>
-                <th>扫描状态</th>
-                <th>进度</th>
-                <th>完成时间</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {libraries.map((library) => (
-                <LibraryRow
-                  key={library.id}
-                  library={library}
-                  isScanning={isScanning}
-                  isDeleting={isDeleting}
-                  onScan={onScan}
-                  onDelete={onDelete}
-                />
-              ))}
-            </tbody>
-          </table>
+        <div className="library-card-grid">
+          {libraries.map((library) => (
+            <LibraryCard
+              key={library.id}
+              library={library}
+              isScanning={isScanning}
+              isDeleting={isDeleting}
+              menuOpen={openLibraryMenuId === library.id}
+              onScan={onScan}
+              onDelete={onDelete}
+              onToggleMenu={onToggleLibraryMenu}
+            />
+          ))}
         </div>
 
         {isLoading && <StateMessage title="正在读取媒体库" body="稍等一下，聆听正在同步媒体库目录。" />}
@@ -1834,67 +1841,73 @@ function LibrariesView({
   )
 }
 
-function LibraryRow({
+
+function LibraryCard({
   library,
   isScanning,
   isDeleting,
   onScan,
+  menuOpen,
   onDelete,
+  onToggleMenu,
 }: {
   library: LibraryItem
   isScanning: boolean
   isDeleting: boolean
+  menuOpen: boolean
   onScan: (library: LibraryItem) => void
   onDelete: (library: LibraryItem) => void
+  onToggleMenu: (library: LibraryItem) => void
 }) {
   const progress = library.scan.totalFiles > 0 ? Math.round((library.scan.scannedFiles / library.scan.totalFiles) * 100) : 0
   const active = isActiveScan(library.scan.status)
   const Icon = library.scan.status === 'completed' ? CheckCircle2 : library.scan.status === 'failed' ? XCircle : Clock3
 
   return (
-    <tr>
-      <td className="path-cell strong-path">{library.path}</td>
-      <td>{library.musicCount}</td>
-      <td>
+    <article className={`library-card ${library.scan.status}`}>
+      <div className="library-card-top">
         <span className={`library-status ${library.scan.status}`}>
           <Icon size={15} />
           {statusLabel(library.scan.status)}
         </span>
-        {library.scan.message && <small className={library.scan.status === 'failed' ? 'scan-message error' : 'scan-message'}>{library.scan.message}</small>}
-      </td>
-      <td>
-        <div className="mini-progress" aria-label={`扫描进度 ${progress}%`}>
-          <span style={{ width: `${progress}%` }} />
-        </div>
-        <small className="progress-text">
-          {library.scan.scannedFiles} / {library.scan.totalFiles}
-        </small>
-      </td>
-      <td>{library.scan.completedAt || '未完成'}</td>
-      <td>
-        <div className="row-actions">
-          <button
-            type="button"
-            aria-label={library.musicCount > 0 ? '再次扫描' : '扫描'}
-            title={library.musicCount > 0 ? '再次扫描' : '扫描'}
-            disabled={active || isScanning}
-            onClick={() => onScan(library)}
-          >
-            <RefreshCw size={15} />
+        <div className="library-menu-wrap">
+          <button type="button" className="row-icon-button" aria-label="更多媒体库操作" title="更多" onClick={() => onToggleMenu(library)}>
+            <MoreHorizontal size={16} />
           </button>
-          <button
-            className="danger"
-            type="button"
-            aria-label="删除媒体库"
-            title="删除媒体库"
-            disabled={active || isDeleting}
-            onClick={() => onDelete(library)}
-          >
-            <Trash2 size={15} />
-          </button>
+          {menuOpen && (
+            <div className="library-menu">
+              <button type="button" className="danger" disabled={active || isDeleting} onClick={() => onDelete(library)}>
+                删除媒体库
+              </button>
+            </div>
+          )}
         </div>
-      </td>
-    </tr>
+      </div>
+
+      <h3 className="library-path" title={library.path}>{library.path}</h3>
+      <div className="library-card-stats">
+        <div><strong>{library.musicCount}</strong><span>歌曲</span></div>
+        <div><strong>{progress}%</strong><span>扫描进度</span></div>
+      </div>
+
+      <div className="library-progress" aria-label={`扫描进度 ${progress}%`}>
+        <span style={{ width: `${progress}%` }} />
+      </div>
+      <p className="library-scan-meta">
+        {library.scan.scannedFiles} / {library.scan.totalFiles} · {library.scan.completedAt || '未完成'}
+      </p>
+      {library.scan.message && <p className={library.scan.status === 'failed' ? 'scan-message error' : 'scan-message'}>{library.scan.message}</p>}
+
+      <button
+        type="button"
+        className="primary-button library-scan-button"
+        disabled={active || isScanning}
+        onClick={() => onScan(library)}
+      >
+        <RefreshCw size={15} />
+        {library.musicCount > 0 ? '重新扫描' : '开始扫描'}
+      </button>
+    </article>
   )
 }
 

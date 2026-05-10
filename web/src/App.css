@@ -59,6 +59,7 @@ svg { display: block; stroke-width: 2; }
 .search-box button { width: 26px; height: 26px; border: 0; border-radius: 8px; background: var(--soft-line); color: #596561; }
 .search-box.disabled { opacity: .56; }
 .library-pane, .libraries-page, .playlist-page, .system-playlist-page { min-width: 0; }
+.libraries-page { display: grid; gap: 16px; }
 .hero { display: grid; grid-template-columns: minmax(0,1fr) 420px; gap: 16px; margin-bottom: 16px; }
 .now-summary { display: grid; grid-template-columns: minmax(0,1fr) 210px; min-height: 174px; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: #fffdf7; box-shadow: none; }
 .now-copy { display: grid; align-content: center; gap: 12px; padding: 24px; }
@@ -209,6 +210,30 @@ svg { display: block; stroke-width: 2; }
 .playlist-choice-empty { margin: 0; border: 1px dashed #d4cdbf; border-radius: 8px; padding: 14px; color: #747d78; font-size: 12px; }
 .modal-divider { height: 1px; background: var(--soft-line); margin: 18px 0; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+.library-card-shell { display: grid; gap: 14px; }
+.library-card-heading { display: grid; grid-template-columns: minmax(0,1fr) minmax(280px,420px); gap: 16px; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: linear-gradient(135deg, #fffdf7, rgba(226,242,235,.62)); padding: 22px; }
+.library-card-heading h2 { margin: 8px 0 0; color: var(--ink); font-size: clamp(30px,4vw,48px); line-height: 1; letter-spacing: -.04em; }
+.library-card-heading p { max-width: 690px; margin: 10px 0 0; color: var(--muted); font-size: 14px; line-height: 1.7; }
+.library-card-metrics { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 1px; background: rgba(220,227,223,.88); }
+.library-card-metrics div { display: grid; align-content: center; background: rgba(255,253,247,.76); padding: 16px; }
+.library-card-metrics strong { color: var(--pine); font-size: 30px; line-height: 1; letter-spacing: -.04em; }
+.library-card-metrics span { margin-top: 9px; color: var(--muted); font-size: 12px; font-weight: 760; }
+.library-card-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); gap: 14px; }
+.library-card { position: relative; display: grid; gap: 14px; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,.84); box-shadow: 0 16px 42px rgba(27,37,34,.06); padding: 16px; }
+.library-card.failed { border-color: rgba(181,82,67,.32); }
+.library-card-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.library-menu-wrap { position: relative; }
+.library-menu { position: absolute; top: 36px; right: 0; z-index: 3; display: grid; min-width: 148px; border: 1px solid var(--line); border-radius: 8px; background: #fffefa; box-shadow: var(--shadow); padding: 6px; }
+.library-menu button { border: 0; border-radius: 8px; background: transparent; color: var(--coral); padding: 9px 10px; text-align: left; }
+.library-path { margin: 0; overflow: hidden; color: var(--ink); font-size: 18px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.library-card-stats { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.library-card-stats div { border: 1px solid var(--soft-line); border-radius: 8px; background: rgba(244,241,234,.48); padding: 12px; }
+.library-card-stats strong { display: block; color: var(--pine); font-size: 24px; line-height: 1; }
+.library-card-stats span { display: block; margin-top: 7px; color: var(--muted); font-size: 12px; }
+.library-progress { height: 8px; overflow: hidden; border-radius: 999px; background: #dfe6e2; }
+.library-progress span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--mint), var(--gold)); }
+.library-scan-meta { margin: -6px 0 0; color: var(--muted); font-size: 12px; }
+.library-scan-button { width: fit-content; }
 .queue-drawer { position: fixed; top: 18px; right: 18px; bottom: 94px; z-index: 8; display: flex; width: min(390px, calc(100vw - 36px)); flex-direction: column; padding: 18px; }
 .queue-header { border-bottom: 1px solid var(--soft-line); padding-bottom: 14px; }
 .queue-section { display: grid; gap: 10px; padding: 16px 0 0; }
