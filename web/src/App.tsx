@@ -1757,14 +1757,12 @@ function PlaylistTrackTable({
       <table className="track-table">
         <colgroup>
           <col className="track-col-select" />
-          <col className="track-col-play" />
           <col className="track-col-title" />
-          <col className="track-col-like" />
-          <col className="track-col-more" />
           <col className="track-col-artist" />
           <col className="track-col-album" />
           <col className="track-col-duration" />
           <col className="track-col-format" />
+          <col className="track-col-actions" />
         </colgroup>
         <thead>
           <tr>
@@ -1776,14 +1774,12 @@ function PlaylistTrackTable({
                 aria-label="选择当前列表全部歌曲"
               />
             </th>
-            <th aria-label="播放"></th>
             <th>标题</th>
-            <th aria-label="收藏"></th>
-            <th aria-label="更多"></th>
             <th>艺术家</th>
             <th>专辑</th>
             <th>时长</th>
             <th>格式</th>
+            <th aria-label="操作"></th>
           </tr>
         </thead>
         <tbody>
@@ -1803,7 +1799,7 @@ function PlaylistTrackTable({
                   aria-label={`选择 ${track.title}`}
                 />
               </td>
-              <td>
+              <td className="track-title-cell" title={track.title}>
                 <button
                   type="button"
                   className="row-icon-button play-row-button"
@@ -1816,13 +1812,20 @@ function PlaylistTrackTable({
                 >
                   <Play size={15} fill="currentColor" />
                 </button>
+                <div className="track-title-stack">
+                  <button type="button" className="track-title">
+                    {track.title}
+                  </button>
+                  <span>{displayArtist(track)} · {displayAlbum(track)}</span>
+                </div>
               </td>
-              <td className="track-title-cell" title={track.title}>
-                <button type="button" className="track-title">
-                  {track.title}
-                </button>
+              <td className={`artist-cell soft-text-cell ${!track.artist ? 'muted-cell' : ''}`} title={displayArtist(track)}>{displayArtist(track)}</td>
+              <td className={`album-cell soft-text-cell ${!track.album ? 'muted-cell' : ''}`} title={displayAlbum(track)}>{displayAlbum(track)}</td>
+              <td className="duration-cell"><span>{formatDuration(track.durationMs)}</span></td>
+              <td className="format-cell">
+                <span className="format-chip">{track.format}</span>
               </td>
-              <td className="track-action-cell">
+              <td className="track-actions-cell">
                 <button
                   type="button"
                   className={`row-icon-button like-row-button ${track.liked ? 'liked' : ''}`}
@@ -1835,8 +1838,6 @@ function PlaylistTrackTable({
                 >
                   <Heart size={15} fill={track.liked ? 'currentColor' : 'none'} />
                 </button>
-              </td>
-              <td className="track-menu-cell track-action-cell">
                 <button
                   type="button"
                   className="row-icon-button"
@@ -1873,12 +1874,6 @@ function PlaylistTrackTable({
                     )}
                   </div>
                 )}
-              </td>
-              <td className={`artist-cell soft-text-cell ${!track.artist ? 'muted-cell' : ''}`} title={displayArtist(track)}>{displayArtist(track)}</td>
-              <td className={`album-cell soft-text-cell ${!track.album ? 'muted-cell' : ''}`} title={displayAlbum(track)}>{displayAlbum(track)}</td>
-              <td className="duration-cell"><span>{formatDuration(track.durationMs)}</span></td>
-              <td className="format-cell">
-                <span className="format-chip">{track.format}</span>
               </td>
             </tr>
           ))}
