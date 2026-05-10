@@ -1,4 +1,4 @@
-import { FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AudioLines,
@@ -6,18 +6,13 @@ import {
   Clock3,
   Heart,
   History,
-  Library,
   ListMusic,
-  ListPlus,
   MoreHorizontal,
   Pause,
-  PanelLeftClose,
-  PanelLeftOpen,
   Play,
   Plus,
   RefreshCw,
   Repeat,
-  Search,
   Shuffle,
   SkipBack,
   SkipForward,
@@ -53,6 +48,7 @@ import {
   type ScanStatus,
   type Track,
 } from './api'
+import { AppShell } from './components/AppShell'
 import { QueueDrawer } from './components/QueueDrawer'
 import {
   getNextPlayMode,
@@ -67,7 +63,7 @@ import { formatDuration, formatDurationSeconds, playbackLabel, playModeLabel, ty
 import { displayAlbum, displayArtist, sortTracks, type TrackSortField } from './tracks'
 
 const defaultLibraryPath = '/mnt/c/Users/guohp/Music/test'
-type ViewMode = 'libraries' | 'songs' | 'playlists' | 'liked' | 'recent'
+export type ViewMode = 'libraries' | 'songs' | 'playlists' | 'liked' | 'recent'
 
 function App() {
   const queryClient = useQueryClient()
@@ -717,66 +713,20 @@ function App() {
   const topbarTitle = viewTitle(view)
 
   return (
-    <div className={`app-shell ${isNavigationCollapsed ? 'nav-collapsed' : 'nav-expanded'}`}>
-      <aside className="sidebar" aria-label="主导航">
-        <div className="sidebar-brand">
-          <div className="brand-mark" title="聆听">
-            <AudioLines size={24} strokeWidth={2.2} />
-          </div>
-          <strong>聆听</strong>
-        </div>
-
-        <button
-          type="button"
-          className="nav-collapse-button"
-          aria-label={isNavigationCollapsed ? '展开导航' : '收起导航'}
-          aria-expanded={!isNavigationCollapsed}
-          onClick={() => setIsNavigationCollapsed((collapsed) => !collapsed)}
-        >
-          {isNavigationCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-          <span>{isNavigationCollapsed ? '展开' : '收起'}</span>
-        </button>
-
-        <nav className="nav-list">
-          <NavItem icon={<ListMusic size={20} />} label="歌曲" active={view === 'songs'} onClick={() => setView('songs')} />
-          <NavItem icon={<ListPlus size={20} />} label="歌单" active={view === 'playlists'} onClick={() => setView('playlists')} />
-          <NavItem icon={<Heart size={20} />} label="我喜欢" active={view === 'liked'} onClick={() => setView('liked')} />
-          <NavItem icon={<History size={20} />} label="最近播放" active={view === 'recent'} onClick={() => setView('recent')} />
-          <NavItem icon={<Library size={20} />} label="媒体库" active={view === 'libraries'} onClick={() => setView('libraries')} />
-        </nav>
-      </aside>
-
-      <main className="workspace">
-        <header className="topbar">
-          <div>
-            <h1>{topbarTitle}</h1>
-            <p>
-              {librarySummary}
-              <span className={`connection-dot ${librarySummaryQuery.isError ? 'offline' : 'online'}`}>
-                {backendStatus}
-              </span>
-            </p>
-          </div>
-
-          <label className="search-box">
-            <Search size={18} />
-            <input
-              value={query}
-              onChange={(event) => handleGlobalSearchChange(event.target.value)}
-              placeholder="全库搜索标题、艺术家或专辑"
-            />
-            {query && (
-              <button
-                type="button"
-                aria-label="清空搜索"
-                onClick={() => setQuery('')}
-              >
-                <X size={16} />
-              </button>
-            )}
-          </label>
-        </header>
-
+    <>
+      <AppShell
+        view={view}
+        topbarTitle={topbarTitle}
+        librarySummary={librarySummary}
+        backendStatus={backendStatus}
+        isBackendOffline={librarySummaryQuery.isError}
+        query={query}
+        isNavigationCollapsed={isNavigationCollapsed}
+        onViewChange={setView}
+        onSearchChange={handleGlobalSearchChange}
+        onClearSearch={() => setQuery('')}
+        onToggleNavigation={() => setIsNavigationCollapsed((collapsed) => !collapsed)}
+      >
         {view === 'songs' ? (
           <SongsView
             tracks={visibleTracks}
@@ -925,7 +875,7 @@ function App() {
             playlists={playlists}
           />
         )}
-      </main>
+      </AppShell>
 
       <footer className="player-bar">
         <div className="player-track">
@@ -1068,26 +1018,7 @@ function App() {
           onClose={handleClosePlaylistDialog}
         />
       )}
-    </div>
-  )
-}
-
-function NavItem({
-  icon,
-  label,
-  active,
-  onClick,
-}: {
-  icon: ReactNode
-  label: string
-  active: boolean
-  onClick: () => void
-}) {
-  return (
-    <button className={`nav-item ${active ? 'active' : ''}`} type="button" aria-label={label} title={label} onClick={onClick}>
-      {icon}
-      <span>{label}</span>
-    </button>
+    </>
   )
 }
 
