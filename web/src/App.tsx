@@ -63,7 +63,7 @@ import {
 } from './player'
 import { formatDurationSeconds, playModeLabel, type PlaybackStatus } from './playback'
 import { calculateLibraryProgress, recentItemsToTracks, shouldJumpToSongsForGlobalSearch } from './interface-flows'
-import { displayArtist, sortTracks, type TrackSortField } from './tracks'
+import { displayAlbum, displayArtist, sortTracks, type TrackSortField } from './tracks'
 
 const defaultLibraryPath = '/mnt/c/Users/guohp/Music/test'
 export type ViewMode = 'libraries' | 'songs' | 'playlists' | 'liked' | 'recent'
@@ -888,7 +888,7 @@ function App() {
       </AppShell>
 
       <footer
-        className={`player-bar ${isMobilePlayerExpanded ? 'mobile-expanded' : ''}`}
+        className={`player-bar ${playbackStatus} ${isMobilePlayerExpanded ? 'mobile-expanded' : ''}`}
         onClick={() => {
           if (window.innerWidth <= 760 && !isMobilePlayerExpanded) {
             setIsMobilePlayerExpanded(true)
@@ -902,6 +902,8 @@ function App() {
           <div>
             <strong>{currentTrack?.title ?? '未选择歌曲'}</strong>
             <span>{currentTrack ? displayArtist(currentTrack) : '选择歌曲后开始播放'}</span>
+            {currentTrack && <em className={`player-status-pill ${playbackStatus}`}>{playbackStatusLabel(playbackStatus)}</em>}
+            {playerError && <em className="player-inline-error">{playerError}</em>}
           </div>
         </div>
 
@@ -1704,6 +1706,12 @@ function RecentPlaysView({
   const tracks = items.map((item) => item.track)
   const selectedTracks = tracks.filter((track) => selectedTrackIds.includes(track.id))
   const latestItem = items[0]
+  const playedAtByTrackId = new Map(items.map((item) => [item.track.id, item.lastPlayedAt]))
+  const recentSubtitle = (track: Track) => {
+    const playedAt = playedAtByTrackId.get(track.id)
+    const playedLabel = playedAt ? formatPlayedAt(playedAt) : '时间未知'
+    return `最近播放 ${playedLabel} · ${displayArtist(track)} · ${displayAlbum(track)}`
+  }
 
   return (
     <section className="system-playlist-page recent-page" aria-label="最近播放">
@@ -1717,14 +1725,27 @@ function RecentPlaysView({
               : '歌曲真正开始播放后，会自动更新到这里。'}
           </p>
         </div>
-        <div className="recent-timeline" aria-label="最近播放时间">
+        <div className="recent-side-panel">
+          <div className="recent-actions" aria-label="最近播放操作">
+            <button type="button" className="primary-button" onClick={() => onPlayAll(tracks)} disabled={!tracks.length}>
+              <Play size={17} fill="currentColor" />
+              播放最近
+            </button>
+            <button type="button" className="secondary-button danger-soft" onClick={onClearTracks} disabled={!tracks.length || isClearing}>
+              <Trash2 size={16} />
+              {isClearing ? '清空中' : '清空记录'}
+            </button>
+          </div>
+
+          <div className="recent-timeline" aria-label="最近播放时间">
           {items.slice(0, 4).map((item) => (
             <article key={`${item.track.id}-${item.lastPlayedAt}`}>
               <strong>{item.track.title}</strong>
               <span>{formatPlayedAt(item.lastPlayedAt)}</span>
             </article>
           ))}
-          {!items.length && <p>还没有播放记录</p>}
+            {!items.length && <p>还没有播放记录</p>}
+          </div>
         </div>
       </div>
 
@@ -1733,19 +1754,22 @@ function RecentPlaysView({
           <h3>最新在上方</h3>
           <span>{tracks.length} 首</span>
         </div>
-        <TrackListToolbar
-          tracks={tracks}
-          selectedTracks={selectedTracks}
-          canRemove={false}
-          canClear
-          isClearing={isClearing}
-          onPlayAll={onPlayAll}
-          onPlaySelected={onPlaySelected}
-          onPlayNextTracks={onPlayNextTracks}
-          onOpenPlaylistDialogForTracks={onOpenPlaylistDialogForTracks}
-          onBatchLike={onBatchLike}
-          onClearTracks={onClearTracks}
-        />
+        {selectedTracks.length > 0 && (
+          <TrackListToolbar
+            tracks={tracks}
+            selectedTracks={selectedTracks}
+            canRemove={false}
+            canClear={false}
+            showPlayAll={false}
+            isClearing={isClearing}
+            onPlayAll={onPlayAll}
+            onPlaySelected={onPlaySelected}
+            onPlayNextTracks={onPlayNextTracks}
+            onOpenPlaylistDialogForTracks={onOpenPlaylistDialogForTracks}
+            onBatchLike={onBatchLike}
+            onClearTracks={onClearTracks}
+          />
+        )}
         <PlaylistTrackTable
           tracks={tracks}
           selectedTrackIds={selectedTrackIds}
@@ -1761,6 +1785,7 @@ function RecentPlaysView({
           onOpenPlaylistDialog={onOpenPlaylistDialog}
           onPlayNext={onPlayNext}
           openTrackMenuId={openTrackMenuId}
+          getTrackSubtitle={recentSubtitle}
         />
         {isLoading && <StateMessage title="正在读取最近播放" body="稍等一下，聆听正在同步播放记录。" />}
         {isError && <StateMessage title="最近播放加载失败" body="请确认后端服务已启动，然后刷新页面。" tone="error" />}
@@ -1949,6 +1974,23 @@ function statusLabel(status: ScanStatus) {
       return '完成'
     case 'failed':
       return '失败'
+  }
+}
+
+function playbackStatusLabel(status: PlaybackStatus) {
+  switch (status) {
+    case 'idle':
+      return '待播放'
+    case 'loading':
+      return '加载中'
+    case 'playing':
+      return '播放中'
+    case 'paused':
+      return '已暂停'
+    case 'ended':
+      return '已结束'
+    case 'error':
+      return '播放失败'
   }
 }
 

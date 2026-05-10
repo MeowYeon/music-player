@@ -135,6 +135,7 @@ export function PlaylistTrackTable({
   onPlayNext,
   onRemoveTrack,
   openTrackMenuId,
+  getTrackSubtitle,
 }: {
   tracks: Track[]
   selectedTrackIds: number[]
@@ -151,6 +152,7 @@ export function PlaylistTrackTable({
   onPlayNext: (track: Track) => void
   onRemoveTrack?: (track: Track) => void
   openTrackMenuId: number | null
+  getTrackSubtitle?: (track: Track) => string
 }) {
   const allSelected = tracks.length > 0 && tracks.every((track) => selectedTrackIds.includes(track.id))
   return (
@@ -214,10 +216,17 @@ export function PlaylistTrackTable({
                   <Play size={15} fill="currentColor" />
                 </button>
                 <div className="track-title-stack">
-                  <button type="button" className="track-title">
+                  <button
+                    type="button"
+                    className="track-title"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onPlayTrack(track)
+                    }}
+                  >
                     {track.title}
                   </button>
-                  <span>{displayArtist(track)} · {displayAlbum(track)}</span>
+                  <span>{getTrackSubtitle ? getTrackSubtitle(track) : `${displayArtist(track)} · ${displayAlbum(track)}`}</span>
                 </div>
               </td>
               <td className={`artist-cell soft-text-cell ${!track.artist ? 'muted-cell' : ''}`} title={displayArtist(track)}>{displayArtist(track)}</td>
