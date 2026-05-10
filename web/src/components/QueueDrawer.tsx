@@ -24,6 +24,7 @@ export function QueueDrawer({
   const upcoming = currentTrack ? queue.filter((track) => track.id !== currentTrack.id) : queue
   return (
     <aside className="queue-drawer" aria-label="播放队列">
+      <div className="queue-sheet-handle" aria-hidden="true" />
       <div className="queue-header">
         <div>
           <h2>播放队列</h2>
