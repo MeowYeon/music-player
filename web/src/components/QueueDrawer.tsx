@@ -51,7 +51,7 @@ export function QueueDrawer({
         )}
       </section>
 
-      <section className="queue-section">
+      <section className="queue-section queue-section-upcoming">
         <span className="eyebrow">接下来</span>
         <div className="queue-list">
           {upcoming.map((track) => (

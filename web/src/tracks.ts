@@ -26,6 +26,11 @@ export function displayAlbum(track: Track) {
   return track.album?.trim() || '未知专辑'
 }
 
+export function retainKnownTrackIds(trackIds: number[], knownTrackIds: ReadonlySet<number>) {
+  const retained = trackIds.filter((id) => knownTrackIds.has(id))
+  return retained.length === trackIds.length ? trackIds : retained
+}
+
 function trackSortValue(track: Track, field: TrackSortField) {
   switch (field) {
     case 'title':

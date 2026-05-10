@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -225,6 +226,23 @@ func (s *Server) handleTrackStream(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
+	}
+
+	if strings.EqualFold(filepath.Ext(path), ".flac") {
+		content, stripped, err := readMinimalFLAC(file)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		if stripped {
+			w.Header().Set("Content-Type", "audio/flac")
+			http.ServeContent(w, r, info.Name(), info.ModTime(), bytes.NewReader(content))
+			return
+		}
+		if _, err := file.Seek(0, 0); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
 	}
 
 	http.ServeContent(w, r, info.Name(), info.ModTime(), file)
