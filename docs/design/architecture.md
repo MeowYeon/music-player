@@ -13,7 +13,7 @@
 5. 前端展示多媒体库合并后的歌曲库、媒体库状态、普通歌单、我喜欢和最近播放。
 6. 用户点击歌曲后，前端通过 HTML5 Audio 播放 Go 后端提供的音频流。
 
-v0.5 已结束 MVP 阶段。v0.6 开始，产品方向转向成熟、长期可用的本地音乐产品。当前后端仍以本机单用户为基础；后续迁移 Electron 或 Wails 时，优先复用同一套 HTTP API、扫描逻辑、SQLite 数据模型和前端页面。
+v0.5 已结束 MVP 阶段。v0.6 完成主界面重做后，产品方向转向成熟、长期可用的本地音乐产品。当前后端仍以本机单用户为基础；后续迁移 Electron 或 Wails 时，优先复用同一套 HTTP API、扫描逻辑、SQLite 数据模型和前端页面。
 
 ## 技术栈
 
@@ -97,6 +97,15 @@ Go 后端
   - v0.6 主界面编排入口。
   - 维护数据查询、mutation、播放状态、播放队列、音量、当前歌曲和临时 UI 状态。
   - 使用 TanStack Query 轮询媒体库、歌曲、歌单和活跃扫描状态。
+  - 页面包括歌曲工作区、歌单工作台、我喜欢、最近播放和媒体库卡片管理。
+
+- `web/src/components/AppShell.tsx`
+  - 应用壳、可折叠产品导航和全局搜索。
+  - 导航顺序为歌曲、歌单、我喜欢、最近播放、媒体库。
+
+- `web/src/components/TrackList.tsx`
+  - 共享歌曲筛选、批量操作条、歌曲表格和空/错误状态。
+  - 歌曲表格桌面优先，行内保留播放、喜欢和更多操作。
 
 - `web/src/player.ts`
   - 播放模式轮转、队列插入、下一首计算和播放器本地存储兼容逻辑。
@@ -108,6 +117,7 @@ Go 后端
 
 - `web/src/components/QueueDrawer.tsx`
   - 播放队列抽屉。
+  - 桌面为右侧抽屉，移动端为近全屏 bottom sheet。
   - 队列只通过底部播放器入口打开，不作为右侧常驻信息栏。
 
 - `web/src/api.ts`
@@ -285,7 +295,8 @@ last_played_at
   - 将歌曲移出 `我喜欢`。
 
 - `GET /api/playlists/recent/tracks`
-  - 返回系统歌单 `最近播放` 的歌曲。
+  - 返回系统歌单 `最近播放` 的最近播放项：`{ track, lastPlayedAt }[]`。
+  - 按 `lastPlayedAt` 最新在上方排序，最多返回 50 条。
 
 - `POST /api/tracks/{id}/recent-play`
   - 记录一次最近播放。
@@ -367,6 +378,7 @@ last_played_at
 最近播放
   -> playlists(type = recent)
   -> POST /api/tracks/{id}/recent-play 更新 last_played_at
+  -> GET /api/playlists/recent/tracks 返回 { track, lastPlayedAt }[]
 ```
 
 ## 配置文件
