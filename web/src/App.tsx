@@ -44,6 +44,7 @@ import {
   unlikeTrack,
   type LibraryItem,
   type Playlist,
+  type RecentTrackItem,
   type ScanStatus,
   type Track,
 } from './api'
@@ -856,18 +857,14 @@ function App() {
             playlists={playlists}
           />
         ) : (
-          <SystemPlaylistView
-            title="最近播放"
-            body="歌曲真正开始播放后，会自动更新到这里。"
-            tracks={recentTracks}
+          <RecentPlaysView
+            items={recentTrackItems}
             selectedTrack={selectedTrack}
             currentTrack={currentTrack}
             playbackStatus={playbackStatus}
             selectedTrackIds={selectedTrackIds}
             isLoading={recentTracksQuery.isLoading}
             isError={recentTracksQuery.isError}
-            emptyTitle="还没有最近播放"
-            emptyBody="开始播放任意歌曲后，这里会展示最近听过的内容。"
             onSelectTrack={handleSelectTrack}
             onToggleTrackSelected={handleToggleTrackSelected}
             onToggleAllTracks={handleToggleAllTracks}
@@ -884,7 +881,6 @@ function App() {
             onClearTracks={handleClearRecentTracks}
             isClearing={clearRecentTracksMutation.isPending}
             openTrackMenuId={openTrackMenuId}
-            playlists={playlists}
           />
         )}
       </AppShell>
@@ -1120,6 +1116,19 @@ function PlaylistPickerModal({
       </section>
     </div>
   )
+}
+
+function formatPlayedAt(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
 }
 
 function SongsView({
@@ -1605,6 +1614,124 @@ function SystemPlaylistView({
         {isLoading && <StateMessage title="正在读取歌曲" body="稍等一下，聆听正在同步系统歌单。" />}
         {isError && <StateMessage title="系统歌单加载失败" body="请确认后端服务已启动，然后刷新页面。" tone="error" />}
         {!isLoading && !isError && !tracks.length && <StateMessage title={emptyTitle} body={emptyBody} />}
+      </div>
+    </section>
+  )
+}
+
+function RecentPlaysView({
+  items,
+  selectedTrack,
+  currentTrack,
+  playbackStatus,
+  selectedTrackIds,
+  isLoading,
+  isError,
+  isClearing,
+  openTrackMenuId,
+  onSelectTrack,
+  onToggleTrackSelected,
+  onToggleAllTracks,
+  onPlayAll,
+  onPlaySelected,
+  onPlayTrack,
+  onToggleLike,
+  onBatchLike,
+  onToggleMenu,
+  onOpenPlaylistDialog,
+  onOpenPlaylistDialogForTracks,
+  onPlayNext,
+  onPlayNextTracks,
+  onClearTracks,
+}: {
+  items: RecentTrackItem[]
+  selectedTrack: Track | null
+  currentTrack: Track | null
+  playbackStatus: PlaybackStatus
+  selectedTrackIds: number[]
+  isLoading: boolean
+  isError: boolean
+  isClearing?: boolean
+  openTrackMenuId: number | null
+  onSelectTrack: (track: Track) => void
+  onToggleTrackSelected: (track: Track, checked: boolean) => void
+  onToggleAllTracks: (tracks: Track[], checked: boolean) => void
+  onPlayAll: (tracks: Track[]) => void
+  onPlaySelected: (tracks: Track[]) => void
+  onPlayTrack: (track: Track) => void
+  onToggleLike: (track: Track) => void
+  onBatchLike: (tracks: Track[], liked: boolean) => void
+  onToggleMenu: (track: Track) => void
+  onOpenPlaylistDialog: (track: Track) => void
+  onOpenPlaylistDialogForTracks: (tracks: Track[]) => void
+  onPlayNext: (track: Track) => void
+  onPlayNextTracks: (tracks: Track[]) => void
+  onClearTracks: () => void
+}) {
+  const tracks = items.map((item) => item.track)
+  const selectedTracks = tracks.filter((track) => selectedTrackIds.includes(track.id))
+  const latestItem = items[0]
+
+  return (
+    <section className="system-playlist-page recent-page" aria-label="最近播放">
+      <div className="recent-hero">
+        <div>
+          <span className="eyebrow">最近播放</span>
+          <h2>按你刚听过的顺序继续</h2>
+          <p>
+            {latestItem
+              ? `最新一次播放：${formatPlayedAt(latestItem.lastPlayedAt)} · ${latestItem.track.title}`
+              : '歌曲真正开始播放后，会自动更新到这里。'}
+          </p>
+        </div>
+        <div className="recent-timeline" aria-label="最近播放时间">
+          {items.slice(0, 4).map((item) => (
+            <article key={`${item.track.id}-${item.lastPlayedAt}`}>
+              <strong>{item.track.title}</strong>
+              <span>{formatPlayedAt(item.lastPlayedAt)}</span>
+            </article>
+          ))}
+          {!items.length && <p>还没有播放记录</p>}
+        </div>
+      </div>
+
+      <div className="table-wrap">
+        <div className="table-header">
+          <h3>最新在上方</h3>
+          <span>{tracks.length} 首</span>
+        </div>
+        <TrackListToolbar
+          tracks={tracks}
+          selectedTracks={selectedTracks}
+          canRemove={false}
+          canClear
+          isClearing={isClearing}
+          onPlayAll={onPlayAll}
+          onPlaySelected={onPlaySelected}
+          onPlayNextTracks={onPlayNextTracks}
+          onOpenPlaylistDialogForTracks={onOpenPlaylistDialogForTracks}
+          onBatchLike={onBatchLike}
+          onClearTracks={onClearTracks}
+        />
+        <PlaylistTrackTable
+          tracks={tracks}
+          selectedTrackIds={selectedTrackIds}
+          selectedTrack={selectedTrack}
+          currentTrack={currentTrack}
+          playbackStatus={playbackStatus}
+          onSelectTrack={onSelectTrack}
+          onToggleTrackSelected={onToggleTrackSelected}
+          onToggleAllTracks={onToggleAllTracks}
+          onPlayTrack={onPlayTrack}
+          onToggleLike={onToggleLike}
+          onToggleMenu={onToggleMenu}
+          onOpenPlaylistDialog={onOpenPlaylistDialog}
+          onPlayNext={onPlayNext}
+          openTrackMenuId={openTrackMenuId}
+        />
+        {isLoading && <StateMessage title="正在读取最近播放" body="稍等一下，聆听正在同步播放记录。" />}
+        {isError && <StateMessage title="最近播放加载失败" body="请确认后端服务已启动，然后刷新页面。" tone="error" />}
+        {!isLoading && !isError && !tracks.length && <StateMessage title="还没有最近播放" body="开始播放任意歌曲后，这里会展示最近听过的内容。" />}
       </div>
     </section>
   )
