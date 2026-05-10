@@ -81,7 +81,6 @@ function App() {
   const [sortField, setSortField] = useState<TrackSortField>('title')
   const [formatFilter, setFormatFilter] = useState('')
   const [likedOnly, setLikedOnly] = useState(false)
-  const [libraryQueryText, setLibraryQueryText] = useState('')
   const [playlistName, setPlaylistName] = useState('')
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | null>(null)
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null)
@@ -360,14 +359,6 @@ function App() {
       setPlaylistDialogPlaylistId(playlists[0].id)
     }
   }, [playlistDialogPlaylistId, playlistDialogTracks.length, playlists])
-  const filteredLibraries = useMemo(() => {
-    const normalized = libraryQueryText.trim().toLowerCase()
-    if (!normalized) {
-      return libraries
-    }
-    return libraries.filter((library) => library.path.toLowerCase().includes(normalized))
-  }, [libraries, libraryQueryText])
-
   const queueIndex = currentTrack ? queue.findIndex((track) => track.id === currentTrack.id) : -1
   const canUsePrevious = playMode === 'single' ? Boolean(currentTrack) : queue.length > 0 && queueIndex > 0
   const canUseNext =
@@ -716,10 +707,14 @@ function App() {
     }
   }
 
+  function handleGlobalSearchChange(value: string) {
+    setQuery(value)
+    if (value.trim() && view !== 'songs') {
+      setView('songs')
+    }
+  }
+
   const topbarTitle = viewTitle(view)
-  const searchValue = view === 'songs' ? query : view === 'libraries' ? libraryQueryText : ''
-  const searchPlaceholder = view === 'songs' ? '搜索标题、艺术家或专辑' : view === 'libraries' ? '搜索媒体库路径' : '当前页面暂无搜索'
-  const canSearch = view === 'songs' || view === 'libraries'
 
   return (
     <div className={`app-shell ${isNavigationCollapsed ? 'nav-collapsed' : 'nav-expanded'}`}>
@@ -763,19 +758,18 @@ function App() {
             </p>
           </div>
 
-          <label className={`search-box ${canSearch ? '' : 'disabled'}`}>
+          <label className="search-box">
             <Search size={18} />
             <input
-              value={searchValue}
-              disabled={!canSearch}
-              onChange={(event) => (view === 'songs' ? setQuery(event.target.value) : setLibraryQueryText(event.target.value))}
-              placeholder={searchPlaceholder}
+              value={query}
+              onChange={(event) => handleGlobalSearchChange(event.target.value)}
+              placeholder="全库搜索标题、艺术家或专辑"
             />
-            {canSearch && searchValue && (
+            {query && (
               <button
                 type="button"
                 aria-label="清空搜索"
-                onClick={() => (view === 'songs' ? setQuery('') : setLibraryQueryText(''))}
+                onClick={() => setQuery('')}
               >
                 <X size={16} />
               </button>
@@ -820,7 +814,7 @@ function App() {
           />
         ) : view === 'libraries' ? (
           <LibrariesView
-            libraries={filteredLibraries}
+            libraries={libraries}
             libraryPath={libraryPath}
             formError={libraryFormError}
             isCreating={createLibraryMutation.isPending}
