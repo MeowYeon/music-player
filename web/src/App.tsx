@@ -2,6 +2,8 @@ import { FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AudioLines,
+  ChevronsLeft,
+  ChevronsRight,
   CheckCircle2,
   Clock3,
   Heart,
@@ -66,20 +68,21 @@ import { formatDuration, formatDurationSeconds, playbackLabel, playModeLabel, ty
 import { displayAlbum, displayArtist, sortTracks, type TrackSortField } from './tracks'
 
 const defaultLibraryPath = '/mnt/c/Users/guohp/Music/test'
-type ViewMode = 'libraries' | 'songs' | 'playlists' | 'liked' | 'recent'
+type ViewMode = 'libraries' | 'songs' | 'playlists' | 'liked' | 'recent' | 'search'
 
 function App() {
   const queryClient = useQueryClient()
   const audioRef = useRef<HTMLAudioElement>(null)
   const previousActiveCountRef = useRef(0)
   const lastRecordedTrackIdRef = useRef<number | null>(null)
+  const isStartingPlaybackRef = useRef(false)
   const storedPlayerStateRef = useRef(readStoredPlayerState())
   const [view, setView] = useState<ViewMode>('songs')
+  const [previousView, setPreviousView] = useState<ViewMode>('songs')
   const [query, setQuery] = useState('')
   const [sortField, setSortField] = useState<TrackSortField>('title')
   const [formatFilter, setFormatFilter] = useState('')
   const [likedOnly, setLikedOnly] = useState(false)
-  const [libraryQueryText, setLibraryQueryText] = useState('')
   const [playlistName, setPlaylistName] = useState('')
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | null>(null)
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null)
@@ -93,6 +96,7 @@ function App() {
   const [queue, setQueue] = useState<Track[]>([])
   const [playMode, setPlayMode] = useState<PlayMode>(storedPlayerStateRef.current.playMode ?? 'sequence')
   const [isQueueOpen, setIsQueueOpen] = useState(false)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true)
   const [libraryPath, setLibraryPath] = useState(defaultLibraryPath)
   const [libraryFormError, setLibraryFormError] = useState('')
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null)
@@ -256,6 +260,47 @@ function App() {
   })
 
   useEffect(() => {
+    if (openTrackMenuId === null && !isQueueOpen && !isVolumeOpen) {
+      return
+    }
+
+    function handleDismissPointerDown(event: PointerEvent) {
+      const target = event.target instanceof Element ? event.target : null
+      if (!target) {
+        return
+      }
+
+      if (openTrackMenuId !== null && !target.closest('.track-menu') && !target.closest('.track-more-button')) {
+        setOpenTrackMenuId(null)
+      }
+
+      if (isQueueOpen && !target.closest('.queue-drawer') && !target.closest('.queue-button')) {
+        setIsQueueOpen(false)
+      }
+
+      if (isVolumeOpen && !target.closest('.volume-popover-wrap')) {
+        setIsVolumeOpen(false)
+      }
+    }
+
+    function handleDismissKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'Escape') {
+        return
+      }
+      setOpenTrackMenuId(null)
+      setIsQueueOpen(false)
+      setIsVolumeOpen(false)
+    }
+
+    document.addEventListener('pointerdown', handleDismissPointerDown)
+    document.addEventListener('keydown', handleDismissKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', handleDismissPointerDown)
+      document.removeEventListener('keydown', handleDismissKeyDown)
+    }
+  }, [isQueueOpen, isVolumeOpen, openTrackMenuId])
+
+  useEffect(() => {
     const activeCount = activeTasks.length
     if (previousActiveCountRef.current > 0 && activeCount === 0) {
       queryClient.invalidateQueries({ queryKey: ['libraries'] })
@@ -358,14 +403,6 @@ function App() {
       setPlaylistDialogPlaylistId(playlists[0].id)
     }
   }, [playlistDialogPlaylistId, playlistDialogTracks.length, playlists])
-  const filteredLibraries = useMemo(() => {
-    const normalized = libraryQueryText.trim().toLowerCase()
-    if (!normalized) {
-      return libraries
-    }
-    return libraries.filter((library) => library.path.toLowerCase().includes(normalized))
-  }, [libraries, libraryQueryText])
-
   const queueIndex = currentTrack ? queue.findIndex((track) => track.id === currentTrack.id) : -1
   const canUsePrevious = playMode === 'single' ? Boolean(currentTrack) : queue.length > 0 && queueIndex > 0
   const canUseNext =
@@ -622,6 +659,7 @@ function App() {
   }
 
   function playTrack(track: Track) {
+    isStartingPlaybackRef.current = true
     setCurrentTrack(track)
     setPlaybackStatus('loading')
     setPlayerError('')
@@ -631,6 +669,7 @@ function App() {
 
     window.setTimeout(() => {
       audioRef.current?.play().catch(() => {
+        isStartingPlaybackRef.current = false
         setPlaybackStatus('error')
         setPlayerError('播放失败，请确认文件仍然存在且浏览器支持该格式。')
       })
@@ -653,10 +692,15 @@ function App() {
       return
     }
 
+    isStartingPlaybackRef.current = true
     setPlaybackStatus('loading')
     audioRef.current?.play().then(
-      () => setPlaybackStatus('playing'),
       () => {
+        isStartingPlaybackRef.current = false
+        setPlaybackStatus('playing')
+      },
+      () => {
+        isStartingPlaybackRef.current = false
         setPlaybackStatus('error')
         setPlayerError('播放失败，请稍后重试。')
       },
@@ -714,13 +758,27 @@ function App() {
     }
   }
 
+  const normalizedGlobalQuery = query.trim()
+  const isShowingSearchResults = view === 'search'
   const topbarTitle = viewTitle(view)
-  const searchValue = view === 'songs' ? query : view === 'libraries' ? libraryQueryText : ''
-  const searchPlaceholder = view === 'songs' ? '搜索标题、艺术家或专辑' : view === 'libraries' ? '搜索媒体库路径' : '当前页面暂无搜索'
-  const canSearch = view === 'songs' || view === 'libraries'
+  const searchPlaceholder = '全局搜索歌曲标题、艺术家或专辑'
+
+  function handleViewChange(nextView: Exclude<ViewMode, 'search'>) {
+    setPreviousView(nextView)
+    setView(nextView)
+  }
+
+  function handleSearchChange(value: string) {
+    setQuery(value)
+    if (value.trim()) {
+      setView('search')
+      return
+    }
+    setView(previousView === 'search' ? 'songs' : previousView)
+  }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${isSidebarCollapsed ? 'sidebar-collapsed' : 'sidebar-expanded'}`}>
       <aside className="sidebar" aria-label="主导航">
         <div className="sidebar-brand">
           <div className="brand-mark" title="聆听">
@@ -729,12 +787,23 @@ function App() {
           <strong>聆听</strong>
         </div>
 
+        <button
+          type="button"
+          className="sidebar-toggle"
+          aria-label={isSidebarCollapsed ? '展开侧栏' : '收起侧栏'}
+          title={isSidebarCollapsed ? '展开侧栏' : '收起侧栏'}
+          onClick={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
+        >
+          {isSidebarCollapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
+          <span>{isSidebarCollapsed ? '展开' : '收起'}</span>
+        </button>
+
         <nav className="nav-list">
-          <NavItem icon={<ListMusic size={20} />} label="歌曲" active={view === 'songs'} onClick={() => setView('songs')} />
-          <NavItem icon={<Library size={20} />} label="媒体库" active={view === 'libraries'} onClick={() => setView('libraries')} />
-          <NavItem icon={<ListPlus size={20} />} label="歌单" active={view === 'playlists'} onClick={() => setView('playlists')} />
-          <NavItem icon={<Heart size={20} />} label="我喜欢" active={view === 'liked'} onClick={() => setView('liked')} />
-          <NavItem icon={<History size={20} />} label="最近播放" active={view === 'recent'} onClick={() => setView('recent')} />
+          <NavItem icon={<ListMusic size={20} />} label="歌曲" active={view === 'songs'} onClick={() => handleViewChange('songs')} />
+          <NavItem icon={<Library size={20} />} label="媒体库" active={view === 'libraries'} onClick={() => handleViewChange('libraries')} />
+          <NavItem icon={<ListPlus size={20} />} label="歌单" active={view === 'playlists'} onClick={() => handleViewChange('playlists')} />
+          <NavItem icon={<Heart size={20} />} label="我喜欢" active={view === 'liked'} onClick={() => handleViewChange('liked')} />
+          <NavItem icon={<History size={20} />} label="最近播放" active={view === 'recent'} onClick={() => handleViewChange('recent')} />
         </nav>
       </aside>
 
@@ -750,19 +819,18 @@ function App() {
             </p>
           </div>
 
-          <label className={`search-box ${canSearch ? '' : 'disabled'}`}>
+          <label className="search-box">
             <Search size={18} />
             <input
-              value={searchValue}
-              disabled={!canSearch}
-              onChange={(event) => (view === 'songs' ? setQuery(event.target.value) : setLibraryQueryText(event.target.value))}
+              value={query}
+              onChange={(event) => handleSearchChange(event.target.value)}
               placeholder={searchPlaceholder}
             />
-            {canSearch && searchValue && (
+            {query && (
               <button
                 type="button"
                 aria-label="清空搜索"
-                onClick={() => (view === 'songs' ? setQuery('') : setLibraryQueryText(''))}
+                onClick={() => handleSearchChange('')}
               >
                 <X size={16} />
               </button>
@@ -770,7 +838,40 @@ function App() {
           </label>
         </header>
 
-        {view === 'songs' ? (
+        {view === 'search' ? (
+          <SearchResultsView
+            tracks={visibleTracks}
+            totalTracks={tracks.length}
+            availableFormats={availableFormats}
+            sortField={sortField}
+            formatFilter={formatFilter}
+            likedOnly={likedOnly}
+            selectedTrackIds={selectedTrackIds}
+            selectedTrack={selectedTrack}
+            currentTrack={currentTrack}
+            playbackStatus={playbackStatus}
+            isLoading={tracksQuery.isLoading}
+            isError={tracksQuery.isError}
+            query={normalizedGlobalQuery}
+            onSortFieldChange={setSortField}
+            onFormatFilterChange={setFormatFilter}
+            onLikedOnlyChange={setLikedOnly}
+            onSelectTrack={handleSelectTrack}
+            onToggleTrackSelected={handleToggleTrackSelected}
+            onToggleAllTracks={handleToggleAllTracks}
+            onPlayAll={handlePlayTrackList}
+            onPlaySelected={handlePlayTrackList}
+            onPlayTrack={handlePlayTrackFromList}
+            onToggleLike={handleToggleLike}
+            onBatchLike={handleBatchLike}
+            onToggleMenu={handleToggleTrackMenu}
+            onOpenPlaylistDialog={handleOpenPlaylistDialog}
+            onOpenPlaylistDialogForTracks={handleOpenPlaylistDialogForTracks}
+            onPlayNext={handlePlayNext}
+            onPlayNextTracks={handlePlayNextTracks}
+            openTrackMenuId={openTrackMenuId}
+          />
+        ) : view === 'songs' ? (
           <SongsView
             tracks={visibleTracks}
             totalTracks={tracks.length}
@@ -807,7 +908,7 @@ function App() {
           />
         ) : view === 'libraries' ? (
           <LibrariesView
-            libraries={filteredLibraries}
+            libraries={libraries}
             libraryPath={libraryPath}
             formError={libraryFormError}
             isCreating={createLibraryMutation.isPending}
@@ -918,7 +1019,6 @@ function App() {
             playlists={playlists}
           />
         )}
-      </main>
 
       <footer className="player-bar">
         <div className="player-track">
@@ -1002,10 +1102,15 @@ function App() {
           ref={audioRef}
           src={currentTrack ? getTrackStreamUrl(currentTrack.id) : undefined}
           onLoadStart={() => {
-            if (currentTrack) {
+            if (!currentTrack) {
+              return
+            }
+            if (isStartingPlaybackRef.current) {
               setPlaybackStatus('loading')
               setPlayerError('')
+              return
             }
+            setPlaybackStatus((status) => (status === 'playing' ? status : 'paused'))
           }}
           onLoadedMetadata={(event) => {
             const nextDuration = event.currentTarget.duration
@@ -1013,10 +1118,14 @@ function App() {
           }}
           onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
           onPlaying={() => {
+            isStartingPlaybackRef.current = false
             setPlaybackStatus('playing')
             recordCurrentTrackPlay()
           }}
-          onPause={() => setPlaybackStatus((status) => (status === 'ended' || status === 'error' ? status : 'paused'))}
+          onPause={() => {
+            isStartingPlaybackRef.current = false
+            setPlaybackStatus((status) => (status === 'ended' || status === 'error' ? status : 'paused'))
+          }}
           onWaiting={() => setPlaybackStatus('loading')}
           onEnded={() => {
             setCurrentTime(0)
@@ -1028,6 +1137,7 @@ function App() {
             setPlaybackStatus('ended')
           }}
           onError={() => {
+            isStartingPlaybackRef.current = false
             setPlaybackStatus('error')
             setPlayerError('播放失败，请确认文件仍然存在且格式受支持。')
           }}
@@ -1045,6 +1155,7 @@ function App() {
           onRemoveTrack={handleRemoveQueueTrack}
         />
       )}
+      </main>
 
       {playlistDialogTracks.length > 0 && (
         <PlaylistPickerModal
@@ -1333,6 +1444,128 @@ function SongsView({
             title={query ? '没有匹配的歌曲' : '还没有歌曲'}
             body={query ? '换个关键词试试，或清空搜索查看全部歌曲。' : '添加媒体库并完成扫描后，这里会展示歌曲列表。'}
           />
+        )}
+      </div>
+    </section>
+  )
+}
+
+
+function SearchResultsView({
+  tracks,
+  totalTracks,
+  availableFormats,
+  sortField,
+  formatFilter,
+  likedOnly,
+  selectedTrackIds,
+  selectedTrack,
+  currentTrack,
+  playbackStatus,
+  isLoading,
+  isError,
+  query,
+  onSortFieldChange,
+  onFormatFilterChange,
+  onLikedOnlyChange,
+  onSelectTrack,
+  onToggleTrackSelected,
+  onToggleAllTracks,
+  onPlayAll,
+  onPlaySelected,
+  onPlayTrack,
+  onToggleLike,
+  onBatchLike,
+  onToggleMenu,
+  onOpenPlaylistDialog,
+  onOpenPlaylistDialogForTracks,
+  onPlayNext,
+  onPlayNextTracks,
+  openTrackMenuId,
+}: {
+  tracks: Track[]
+  totalTracks: number
+  availableFormats: string[]
+  sortField: TrackSortField
+  formatFilter: string
+  likedOnly: boolean
+  selectedTrackIds: number[]
+  selectedTrack: Track | null
+  currentTrack: Track | null
+  playbackStatus: PlaybackStatus
+  isLoading: boolean
+  isError: boolean
+  query: string
+  onSortFieldChange: (field: TrackSortField) => void
+  onFormatFilterChange: (format: string) => void
+  onLikedOnlyChange: (likedOnly: boolean) => void
+  onSelectTrack: (track: Track) => void
+  onToggleTrackSelected: (track: Track, checked: boolean) => void
+  onToggleAllTracks: (tracks: Track[], checked: boolean) => void
+  onPlayAll: (tracks: Track[]) => void
+  onPlaySelected: (tracks: Track[]) => void
+  onPlayTrack: (track: Track) => void
+  onToggleLike: (track: Track) => void
+  onBatchLike: (tracks: Track[], liked: boolean) => void
+  onToggleMenu: (track: Track) => void
+  onOpenPlaylistDialog: (track: Track) => void
+  onOpenPlaylistDialogForTracks: (tracks: Track[]) => void
+  onPlayNext: (track: Track) => void
+  onPlayNextTracks: (tracks: Track[]) => void
+  openTrackMenuId: number | null
+}) {
+  const selectedTracks = tracks.filter((track) => selectedTrackIds.includes(track.id))
+  return (
+    <section className="library-pane search-results-page" aria-label="搜索结果">
+      <div className="table-wrap">
+        <div className="table-header">
+          <h3>搜索结果</h3>
+          <span>{tracks.length} / {totalTracks} 首 · {query}</span>
+        </div>
+
+        <TrackFilterBar
+          sortField={sortField}
+          formatFilter={formatFilter}
+          likedOnly={likedOnly}
+          availableFormats={availableFormats}
+          onSortFieldChange={onSortFieldChange}
+          onFormatFilterChange={onFormatFilterChange}
+          onLikedOnlyChange={onLikedOnlyChange}
+        />
+
+        <TrackListToolbar
+          tracks={tracks}
+          selectedTracks={selectedTracks}
+          canRemove={false}
+          canClear={false}
+          onPlayAll={onPlayAll}
+          onPlaySelected={onPlaySelected}
+          onPlayNextTracks={onPlayNextTracks}
+          onOpenPlaylistDialogForTracks={onOpenPlaylistDialogForTracks}
+          onBatchLike={onBatchLike}
+        />
+
+        <PlaylistTrackTable
+          tracks={tracks}
+          selectedTrackIds={selectedTrackIds}
+          selectedTrack={selectedTrack}
+          currentTrack={currentTrack}
+          playbackStatus={playbackStatus}
+          onSelectTrack={onSelectTrack}
+          onToggleTrackSelected={onToggleTrackSelected}
+          onToggleAllTracks={onToggleAllTracks}
+          onPlayTrack={onPlayTrack}
+          onToggleLike={onToggleLike}
+          onToggleMenu={onToggleMenu}
+          onOpenPlaylistDialog={onOpenPlaylistDialog}
+          onPlayNext={onPlayNext}
+          openTrackMenuId={openTrackMenuId}
+        />
+
+        {isLoading && <StateMessage title="正在搜索歌曲" body="稍等一下，聆听正在检索本地媒体库。" />}
+        {isError && <StateMessage title="搜索失败" body="请确认后端服务已启动，然后刷新页面或重新扫描。" tone="error" />}
+        {!isLoading && !isError && !tracks.length && (
+          <StateMessage title="没有匹配的歌曲" body="换个关键词试试，或清空搜索回到原页面。" />
         )}
       </div>
     </section>
@@ -2243,19 +2476,28 @@ function SystemPlaylistView({
 }) {
   const selectedTracks = tracks.filter((track) => selectedTrackIds.includes(track.id))
   return (
-    <section className="system-playlist-page" aria-label={title}>
-      <div className="now-summary">
-        <div>
+    <section className={`system-playlist-page ${title === '我喜欢' ? 'system-playlist-page--liked' : 'system-playlist-page--recent'}`} aria-label={title}>
+      <div className="now-summary system-hero">
+        <div className="now-copy system-hero-copy">
           <span className="eyebrow">系统歌单</span>
           <h2>{title}</h2>
           <p>{body}</p>
+          <div className="system-hero-stats" aria-label={`${title}统计`}>
+            <span><strong>{tracks.length}</strong> 首歌曲</span>
+            <span><strong>{selectedTrackIds.length}</strong> 已选</span>
+            <span><strong>{formatDuration(tracks.reduce((sum, track) => sum + track.durationMs, 0))}</strong> 总时长</span>
+          </div>
         </div>
-        <div className="system-glyph" aria-hidden="true">
-          {title === '我喜欢' ? <Heart size={32} /> : <History size={32} />}
+        <div className="system-hero-aside" aria-hidden="true">
+          <div className="system-glyph">
+            {title === '我喜欢' ? <Heart size={34} fill="currentColor" /> : <History size={34} />}
+          </div>
+          <span />
+          <span />
         </div>
       </div>
 
-      <div className="table-wrap">
+      <div className="table-wrap system-table-card">
         <div className="table-header">
           <h3>{title}</h3>
           <span>{tracks.length} 首</span>
@@ -2527,10 +2769,10 @@ function PlaylistTrackTable({
                   <Heart size={15} fill={track.liked ? 'currentColor' : 'none'} />
                 </button>
               </td>
-              <td className="track-menu-cell track-action-cell">
+              <td className={`track-menu-cell track-action-cell ${openTrackMenuId === track.id ? 'open' : ''}`}>
                 <button
                   type="button"
-                  className="row-icon-button"
+                  className="row-icon-button track-more-button"
                   aria-label="更多操作"
                   title="更多操作"
                   onClick={(event) => {
@@ -2542,10 +2784,10 @@ function PlaylistTrackTable({
                 </button>
                 {openTrackMenuId === track.id && (
                   <div className="track-menu" onClick={(event) => event.stopPropagation()}>
-                    <button type="button" onClick={() => onOpenPlaylistDialog(track)}>
+                    <button type="button" onClick={() => { onOpenPlaylistDialog(track); onToggleMenu(track) }}>
                       添加到歌单
                     </button>
-                    <button type="button" onClick={() => onPlayNext(track)}>
+                    <button type="button" onClick={() => { onPlayNext(track); onToggleMenu(track) }}>
                       下一首播放
                     </button>
                     <button
@@ -2558,7 +2800,7 @@ function PlaylistTrackTable({
                       复制路径
                     </button>
                     {onRemoveTrack && (
-                      <button type="button" onClick={() => onRemoveTrack(track)}>
+                      <button type="button" onClick={() => { onRemoveTrack(track); onToggleMenu(track) }}>
                         移出歌单
                       </button>
                     )}
@@ -2767,6 +3009,8 @@ function viewTitle(view: ViewMode) {
       return '媒体库'
     case 'songs':
       return '歌曲'
+    case 'search':
+      return '搜索结果'
     case 'playlists':
       return '歌单'
     case 'liked':

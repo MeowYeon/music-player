@@ -451,3 +451,527 @@ svg { display: block; stroke-width: 2; }
 .track-table thead th[aria-label="播放"],
 .track-table thead th[aria-label="收藏"],
 .track-table thead th[aria-label="更多"] { color: transparent; }
+
+/* v0.5.1 navigation: expandable rail with deliberate, tactile controls. */
+.app-shell { transition: grid-template-columns 180ms ease; }
+.app-shell.sidebar-expanded { grid-template-columns: 218px minmax(0,1fr); }
+.app-shell.sidebar-collapsed { grid-template-columns: 82px minmax(0,1fr); }
+.sidebar { position: relative; gap: 14px; grid-template-rows: auto auto 1fr; transition: padding 180ms ease; }
+.sidebar-brand { min-height: 48px; grid-template-columns: 48px minmax(0,1fr); align-items: center; gap: 12px; justify-items: start; }
+.sidebar-brand strong { display: block; overflow: hidden; color: var(--pine); font-size: 18px; font-weight: 900; letter-spacing: .08em; white-space: nowrap; }
+.sidebar-collapsed .sidebar-brand { grid-template-columns: 48px; justify-items: center; }
+.sidebar-collapsed .sidebar-brand strong { display: none; }
+.sidebar-toggle { display: inline-flex; width: 100%; height: 36px; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--soft-line); border-radius: 8px; background: linear-gradient(180deg, #fffdf7, #f4f1ea); color: var(--pine); font-size: 12px; font-weight: 820; }
+.sidebar-toggle:hover { border-color: rgba(15,135,100,.34); background: var(--mint-soft); color: var(--mint); }
+.sidebar-collapsed .sidebar-toggle span { display: none; }
+.nav-list { justify-items: stretch; }
+.nav-item { width: 100%; grid-template-columns: 20px minmax(0,1fr); justify-content: start; gap: 12px; padding: 0 12px; }
+.nav-item span { display: block; overflow: hidden; font-size: 13px; font-weight: 820; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-collapsed .nav-list { justify-items: center; }
+.sidebar-collapsed .nav-item { width: 44px; grid-template-columns: 1fr; justify-content: center; gap: 0; padding: 0; }
+.sidebar-collapsed .nav-item span { display: none; }
+
+/* v0.5.1 reliable track action menu: overlay without changing row height/current track layout. */
+.table-wrap, .table-scroll { overflow: visible; }
+.track-menu-cell { position: relative; overflow: visible !important; }
+.track-menu-cell.open > .row-icon-button { background: var(--pine); color: #fff; }
+.track-menu { position: absolute; z-index: 30; right: 8px; top: calc(100% - 8px); display: grid; min-width: 156px; gap: 4px; margin-top: 0; border-color: rgba(15,135,100,.24); background: #fffefa; box-shadow: 0 18px 44px rgba(27,37,34,.18); }
+.track-menu button, .track-menu span { white-space: nowrap; }
+
+/* v0.5.1 queue drawer: long queues stay inside the panel and scroll only the upcoming list. */
+.queue-drawer { min-height: 0; overflow: hidden; }
+.queue-section { flex: 0 0 auto; min-height: 0; }
+.queue-section-upcoming { flex: 1 1 auto; overflow: hidden; }
+.queue-section-upcoming .queue-list { min-height: 0; padding-right: 4px; }
+.queue-list { align-content: start; }
+.queue-track-row { align-items: start; }
+
+/* v0.5.1 system playlist hero: warmer, denser panels for liked/recent. */
+.system-playlist-page { gap: 18px; }
+.system-playlist-page > .system-hero { position: relative; grid-template-columns: minmax(0,1fr) 220px; min-height: 190px; border-color: rgba(33,60,53,.16); background: linear-gradient(135deg, rgba(255,253,247,.98), rgba(226,242,235,.62)); box-shadow: 0 18px 52px rgba(27,37,34,.10); }
+.system-playlist-page--liked > .system-hero { background: radial-gradient(circle at 88% 18%, rgba(181,82,67,.18), transparent 15rem), linear-gradient(135deg, rgba(255,253,247,.98), rgba(247,228,223,.74)); }
+.system-playlist-page--recent > .system-hero { background: radial-gradient(circle at 90% 18%, rgba(40,107,136,.18), transparent 15rem), linear-gradient(135deg, rgba(255,253,247,.98), rgba(226,242,235,.72)); }
+.system-hero-copy h2 { font-size: clamp(36px, 5vw, 58px); letter-spacing: -.05em; }
+.system-hero-copy p { max-width: 560px; font-size: 14px; }
+.system-hero-stats { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.system-hero-stats span { display: inline-flex; align-items: baseline; gap: 5px; border: 1px solid rgba(33,60,53,.12); border-radius: 999px; background: rgba(255,255,255,.62); color: var(--muted); padding: 7px 10px; font-size: 12px; font-weight: 760; }
+.system-hero-stats strong { color: var(--pine); font-size: 15px; }
+.system-hero-aside { position: relative; display: grid; place-items: center; overflow: hidden; border-left: 1px solid rgba(33,60,53,.10); }
+.system-hero-aside::before { position: absolute; width: 150px; height: 150px; border: 1px solid rgba(33,60,53,.16); border-radius: 50%; background: conic-gradient(from 160deg, rgba(33,60,53,.92), rgba(15,135,100,.72), rgba(197,140,46,.72), rgba(33,60,53,.92)); content: ""; }
+.system-playlist-page--liked .system-hero-aside::before { background: conic-gradient(from 150deg, var(--coral), #f0b7a7, var(--gold), var(--coral)); }
+.system-glyph { position: relative; z-index: 1; width: 82px; height: 82px; border-radius: 18px; background: rgba(255,253,247,.9); box-shadow: 0 18px 40px rgba(27,37,34,.16); }
+.system-hero-aside > span { position: absolute; width: 128px; height: 14px; border-radius: 999px; background: rgba(255,255,255,.62); transform: rotate(-28deg) translateY(-66px); }
+.system-hero-aside > span:last-child { width: 96px; background: rgba(33,60,53,.12); transform: rotate(32deg) translateY(70px); }
+.system-table-card { box-shadow: 0 14px 40px rgba(27,37,34,.08); }
+
+@media (max-width: 760px) {
+  .app-shell.sidebar-expanded, .app-shell.sidebar-collapsed { display: block; }
+  .sidebar { grid-template-rows: none; gap: 10px; }
+  .sidebar-toggle { flex: 0 0 auto; width: 42px; }
+  .sidebar-toggle span, .sidebar-brand strong, .nav-item span { display: none; }
+  .nav-item, .sidebar-collapsed .nav-item { width: 44px; grid-template-columns: 1fr; padding: 0; }
+  .system-playlist-page > .system-hero { grid-template-columns: 1fr; }
+  .system-hero-aside { display: none; }
+}
+.sidebar .nav-list { margin-top: 0; }
+
+/* v0.5.1 consistency: system playlist hero matches the songs page summary scale. */
+.system-playlist-page > .system-hero {
+  grid-template-columns: minmax(0,1fr) 210px;
+  min-height: 174px;
+  box-shadow: none;
+}
+.system-hero-copy h2 {
+  font-size: 34px;
+  line-height: 1.12;
+  letter-spacing: 0;
+}
+.system-hero-copy p {
+  max-width: none;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.system-hero-stats {
+  margin-top: 0;
+}
+.system-hero-stats span {
+  padding: 5px 9px;
+  font-size: 12px;
+}
+.system-hero-stats strong {
+  font-size: 13px;
+}
+.system-hero-aside::before {
+  width: 132px;
+  height: 132px;
+}
+.system-glyph {
+  width: 76px;
+  height: 76px;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+/* v0.5.1 shell scrolling: keep the navigation rail visible while the main page scrolls. */
+.app-shell {
+  height: calc(100vh - 36px);
+  min-height: 0;
+}
+.sidebar {
+  min-height: 0;
+  height: 100%;
+  align-self: stretch;
+}
+.workspace {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+@media (max-width: 760px) {
+  .app-shell {
+    height: auto;
+    min-height: 100vh;
+  }
+  .sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 7;
+    height: auto;
+    min-height: auto;
+  }
+  .workspace {
+    overflow: visible;
+  }
+}
+
+/* v0.5.1 table scroll: headers should scroll with the song list, not stick in place. */
+.track-table th,
+.library-table th {
+  position: static;
+  top: auto;
+  z-index: auto;
+}
+
+/* v0.5.1 sidebar alignment: brand, collapse control, and nav buttons share the same 44px rail geometry. */
+.sidebar {
+  justify-items: center;
+}
+.sidebar-brand {
+  width: 100%;
+  min-height: 44px;
+  grid-template-columns: 44px minmax(0,1fr);
+  justify-content: start;
+  justify-items: start;
+}
+.brand-mark {
+  width: 44px;
+  height: 44px;
+}
+.sidebar-toggle {
+  width: 100%;
+  height: 44px;
+  justify-content: start;
+  padding: 0 12px;
+}
+.sidebar-toggle svg,
+.nav-item svg {
+  flex: 0 0 auto;
+}
+.sidebar-collapsed .sidebar-brand,
+.sidebar-collapsed .sidebar-toggle,
+.sidebar-collapsed .nav-item {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  justify-content: center;
+  justify-items: center;
+}
+.sidebar-collapsed .sidebar-brand {
+  grid-template-columns: 44px;
+}
+.sidebar-expanded .nav-item,
+.sidebar-expanded .sidebar-toggle {
+  grid-template-columns: 20px minmax(0,1fr);
+}
+.sidebar-expanded .nav-list,
+.sidebar-expanded .sidebar-brand,
+.sidebar-expanded .sidebar-toggle,
+.sidebar-expanded .nav-item {
+  width: 100%;
+}
+
+/* v0.5.1 player clearance: leave enough scrollable room so the last track is never hidden by the fixed player. */
+.workspace {
+  padding-bottom: 156px;
+  scroll-padding-bottom: 156px;
+}
+.library-pane,
+.system-playlist-page,
+.playlist-page,
+.libraries-page {
+  padding-bottom: 18px;
+}
+@media (max-width: 760px) {
+  .workspace {
+    padding-bottom: 168px;
+    scroll-padding-bottom: 168px;
+  }
+}
+
+/* v0.5.1 player clearance hard stop: add real scrollable space after the active page, not only inner padding. */
+.workspace > .library-pane,
+.workspace > .system-playlist-page,
+.workspace > .playlist-page,
+.workspace > .libraries-page {
+  margin-bottom: 148px;
+}
+.track-table tbody tr:last-child td,
+.library-table tbody tr:last-child td {
+  border-bottom-width: 0;
+}
+@media (max-width: 760px) {
+  .workspace > .library-pane,
+  .workspace > .system-playlist-page,
+  .workspace > .playlist-page,
+  .workspace > .libraries-page {
+    margin-bottom: 164px;
+  }
+}
+
+/* v0.5.1 fullscreen shell: remove the desktop window gutter and pin the app to viewport edges. */
+.app-shell {
+  width: 100vw;
+  height: 100vh;
+  min-height: 100vh;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+.sidebar {
+  min-height: 100vh;
+}
+.player-bar {
+  bottom: 12px;
+}
+.queue-drawer {
+  top: 12px;
+  right: 12px;
+}
+
+/* v0.5.1 player/list form exploration — choose an in-flow docked player, not an overlay. */
+.app-shell {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+.sidebar {
+  grid-row: 1 / -1;
+}
+.workspace {
+  grid-column: 2;
+  grid-row: 1;
+  padding-bottom: 26px;
+  scroll-padding-bottom: 26px;
+}
+.player-bar {
+  position: static;
+  grid-column: 2;
+  grid-row: 2;
+  transform: none;
+  width: auto;
+  margin: 0 18px 18px;
+  z-index: 4;
+}
+.workspace > .library-pane,
+.workspace > .system-playlist-page,
+.workspace > .playlist-page,
+.workspace > .libraries-page {
+  margin-bottom: 0;
+}
+.queue-drawer {
+  bottom: 112px;
+}
+@media (max-width: 760px) {
+  .app-shell {
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    height: 100vh;
+  }
+  .sidebar {
+    grid-row: 1;
+    min-height: auto;
+  }
+  .workspace {
+    grid-column: 1;
+    grid-row: 2;
+    overflow-y: auto;
+    padding-bottom: 18px;
+    scroll-padding-bottom: 18px;
+  }
+  .player-bar {
+    grid-column: 1;
+    grid-row: 3;
+    width: auto;
+    margin: 0 10px 10px;
+  }
+  .queue-drawer {
+    bottom: 90px;
+  }
+}
+
+/* v0.5.1 dock width: player spans from the sidebar edge to the right viewport edge. */
+.player-bar {
+  margin: 0;
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 1px solid #d7dfda;
+  border-radius: 0;
+  box-shadow: 0 -14px 42px rgba(27,37,34,.11);
+}
+@media (max-width: 760px) {
+  .player-bar {
+    margin: 0;
+    border-left: 0;
+  }
+}
+
+/* v0.5.1 dock alignment: player width follows the content/list inset, not the full main column. */
+.player-bar {
+  margin: 0 26px 18px;
+  border: 1px solid #d7dfda;
+  border-radius: 8px;
+  box-shadow: 0 18px 46px rgba(27,37,34,.13);
+}
+@media (max-width: 760px) {
+  .player-bar {
+    margin: 0 14px 10px;
+    border-radius: 8px;
+  }
+}
+
+/* v0.5.1 exact right-edge alignment: include the player's border in the same inset as the list card. */
+.player-bar {
+  justify-self: stretch;
+  box-sizing: border-box;
+  width: calc(100% - 52px);
+  margin: 0 26px 18px;
+}
+@media (max-width: 760px) {
+  .player-bar {
+    width: calc(100% - 28px);
+    margin: 0 14px 10px;
+  }
+}
+
+/* v0.5.1 exact content alignment: the main workspace owns a vertical scrollbar, so match its visible content edge. */
+.player-bar {
+  width: calc(100% - 68px);
+  margin: 0 42px 18px 26px;
+}
+@media (max-width: 760px) {
+  .player-bar {
+    width: calc(100% - 28px);
+    margin: 0 14px 10px;
+  }
+}
+
+/* v0.5.1 queue/player pairing: queue drawer docks to the same right edge and sits directly above the player. */
+.queue-drawer {
+  right: 42px;
+  bottom: 104px;
+  width: min(390px, calc(100vw - 124px));
+  border-radius: 8px;
+  box-shadow: 0 18px 46px rgba(27,37,34,.18);
+}
+@media (max-width: 760px) {
+  .queue-drawer {
+    right: 14px;
+    bottom: 88px;
+    width: calc(100vw - 28px);
+  }
+}
+
+/* v0.5.1 layout baseline: one inset system for every page and the docked player. */
+:root {
+  --content-x: 26px;
+  --content-top: 22px;
+  --content-bottom: 18px;
+}
+.workspace {
+  padding: var(--content-top) var(--content-x) 26px;
+  scrollbar-gutter: stable;
+}
+.library-pane,
+.search-results-page,
+.libraries-page,
+.system-playlist-page,
+.playlist-page,
+.topbar {
+  width: 100%;
+  max-width: none;
+  margin-inline: 0;
+}
+.hero,
+.now-summary,
+.table-wrap,
+.libraries-wrap,
+.library-toolbar,
+.playlist-workbench-page,
+.playlist-workbench-detail,
+.playlist-workbench-sidebar,
+.system-table-card {
+  width: 100%;
+}
+.player-bar {
+  width: auto;
+  margin: 0 var(--content-x) var(--content-bottom);
+  justify-self: stretch;
+}
+.queue-drawer {
+  right: var(--content-x);
+}
+@media (max-width: 760px) {
+  :root {
+    --content-x: 14px;
+    --content-top: 18px;
+    --content-bottom: 10px;
+  }
+  .workspace {
+    padding: var(--content-top) var(--content-x) 18px;
+    scrollbar-gutter: auto;
+  }
+  .player-bar {
+    width: auto;
+    margin: 0 var(--content-x) var(--content-bottom);
+  }
+  .queue-drawer {
+    right: var(--content-x);
+    width: calc(100vw - (var(--content-x) * 2));
+  }
+}
+
+/* v0.5.1 layout fix A: player lives inside workspace, sharing the exact content coordinate system. */
+.app-shell {
+  grid-template-rows: minmax(0, 1fr);
+}
+.sidebar {
+  grid-row: 1;
+}
+.workspace {
+  grid-column: 2;
+  grid-row: 1;
+  grid-template-rows: auto minmax(0, auto) auto;
+  align-content: start;
+}
+.workspace > .player-bar {
+  position: sticky;
+  bottom: 0;
+  grid-column: 1;
+  grid-row: auto;
+  width: 100%;
+  margin: 0;
+  transform: none;
+  justify-self: stretch;
+  box-sizing: border-box;
+}
+@media (max-width: 760px) {
+  .app-shell {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .workspace {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .workspace > .player-bar {
+    width: 100%;
+    margin: 0;
+  }
+}
+
+/* v0.5.1 bottom dock behavior: player stays at the workspace bottom for short and long content. */
+.workspace {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  align-content: stretch;
+}
+.workspace > .topbar {
+  grid-row: 1;
+}
+.workspace > :not(.topbar):not(.player-bar) {
+  grid-row: 2;
+  min-height: 0;
+}
+.workspace > .player-bar {
+  grid-row: 3;
+  position: sticky;
+  bottom: 0;
+  align-self: end;
+}
+.library-pane,
+.search-results-page,
+.libraries-page,
+.system-playlist-page,
+.playlist-page {
+  min-height: 0;
+  overflow: auto;
+}
+@media (max-width: 760px) {
+  .workspace {
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+}
+
+/* v0.5.1 bottom flush: no gutter below the player dock. */
+.workspace {
+  padding-bottom: 0;
+}
+.workspace > .player-bar {
+  margin-bottom: 0;
+  border-bottom: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+@media (max-width: 760px) {
+  .workspace {
+    padding-bottom: 0;
+  }
+}
