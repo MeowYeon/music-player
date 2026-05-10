@@ -7,7 +7,6 @@ import {
   Heart,
   History,
   ListMusic,
-  MoreHorizontal,
   Pause,
   Play,
   Plus,
@@ -50,6 +49,7 @@ import {
 } from './api'
 import { AppShell } from './components/AppShell'
 import { QueueDrawer } from './components/QueueDrawer'
+import { PlaylistTrackTable, StateMessage, TrackFilterBar, TrackListToolbar } from './components/TrackList'
 import {
   getNextPlayMode,
   getNextQueueTrack,
@@ -59,8 +59,8 @@ import {
   type PlayMode,
   type StoredPlayerState,
 } from './player'
-import { formatDuration, formatDurationSeconds, playbackLabel, playModeLabel, type PlaybackStatus } from './playback'
-import { displayAlbum, displayArtist, sortTracks, type TrackSortField } from './tracks'
+import { formatDurationSeconds, playModeLabel, type PlaybackStatus } from './playback'
+import { displayArtist, sortTracks, type TrackSortField } from './tracks'
 
 const defaultLibraryPath = '/mnt/c/Users/guohp/Music/test'
 export type ViewMode = 'libraries' | 'songs' | 'playlists' | 'liked' | 'recent'
@@ -463,6 +463,16 @@ function App() {
     playTrack(firstTrack)
   }
 
+  function handleShuffleTrackList(trackList: Track[]) {
+    const shuffledTracks = [...trackList]
+    for (let index = shuffledTracks.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(Math.random() * (index + 1))
+      ;[shuffledTracks[index], shuffledTracks[swapIndex]] = [shuffledTracks[swapIndex], shuffledTracks[index]]
+    }
+    setPlayMode('shuffle')
+    handlePlayTrackList(shuffledTracks)
+  }
+
   function handleToggleLike(track: Track) {
     toggleLikeMutation.mutate(track)
   }
@@ -750,6 +760,7 @@ function App() {
             onToggleTrackSelected={handleToggleTrackSelected}
             onToggleAllTracks={handleToggleAllTracks}
             onPlayAll={handlePlayTrackList}
+            onShuffleAll={handleShuffleTrackList}
             onPlaySelected={handlePlayTrackList}
             onPlayTrack={handlePlayTrackFromList}
             onToggleLike={handleToggleLike}
@@ -1132,6 +1143,7 @@ function SongsView({
   onToggleTrackSelected,
   onToggleAllTracks,
   onPlayAll,
+  onShuffleAll,
   onPlaySelected,
   onPlayTrack,
   onToggleLike,
@@ -1165,6 +1177,7 @@ function SongsView({
   onToggleTrackSelected: (track: Track, checked: boolean) => void
   onToggleAllTracks: (tracks: Track[], checked: boolean) => void
   onPlayAll: (tracks: Track[]) => void
+  onShuffleAll: (tracks: Track[]) => void
   onPlaySelected: (tracks: Track[]) => void
   onPlayTrack: (track: Track) => void
   onToggleLike: (track: Track) => void
@@ -1178,44 +1191,52 @@ function SongsView({
   playlists: Playlist[]
 }) {
   const selectedTracks = tracks.filter((track) => selectedTrackIds.includes(track.id))
+  const activeFilterCount = [formatFilter, likedOnly ? 'liked' : ''].filter(Boolean).length
+  const hasSearch = Boolean(query.trim())
+  const formatSummary = availableFormats.length ? availableFormats.join(' / ').toUpperCase() : '等待扫描'
   return (
-    <section className="library-pane" aria-label="歌曲库">
-      <div className="hero">
-        <div className="now-summary">
-          <div className="now-copy">
-            <span className="eyebrow">正在播放</span>
-            <h2>{currentTrack?.title ?? '未选择歌曲'}</h2>
-            <p>{currentTrack ? `${displayArtist(currentTrack)} · ${displayAlbum(currentTrack)} · ${playbackLabel(playbackStatus)}` : '从歌曲列表选择一首开始播放'}</p>
-            {playerError && <em className="inline-error">{playerError}</em>}
-          </div>
-          <div className="passive-wave" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-            <span />
-            <span />
-            <span />
-            <span />
+    <section className="library-pane songs-workspace" aria-label="歌曲库">
+      <div className="songs-hero">
+        <div className="songs-hero-copy">
+          <span className="eyebrow">歌曲工作区</span>
+          <h2>{hasSearch ? `搜索“${query.trim()}”` : '从整座曲库开始'}</h2>
+          <p>
+            {hasSearch
+              ? `找到 ${tracks.length} 首匹配歌曲。结果会跟随全局搜索实时更新。`
+              : `已索引 ${totalTracks} 首歌曲，保留桌面表格的效率，同时把启动播放、筛选和结果状态放在最前面。`}
+          </p>
+          {playerError && <em className="inline-error">{playerError}</em>}
+          <div className="songs-hero-actions">
+            <button type="button" className="primary-button" onClick={() => onPlayAll(tracks)} disabled={!tracks.length}>
+              <Play size={17} fill="currentColor" />
+              播放全部
+            </button>
+            <button type="button" className="secondary-button" onClick={() => onShuffleAll(tracks)} disabled={!tracks.length}>
+              <Shuffle size={17} />
+              随机播放
+            </button>
           </div>
         </div>
 
-        <div className="status-grid" aria-label="曲库状态">
-          <div className="stat">
-            <strong>{totalTracks}</strong>
-            <span>索引歌曲</span>
-          </div>
-          <div className="stat">
+        <div className="songs-filter-summary" aria-label="浏览摘要">
+          <div>
             <strong>{tracks.length}</strong>
-            <span>当前筛选</span>
+            <span>{hasSearch ? '搜索结果' : '当前可播放'}</span>
           </div>
-          <div className="stat">
-            <strong>{availableFormats.length}</strong>
-            <span>音频格式</span>
+          <div>
+            <strong>{activeFilterCount}</strong>
+            <span>启用筛选</span>
           </div>
-          <div className="stat">
+          <div>
             <strong>{selectedTrackIds.length}</strong>
             <span>已选歌曲</span>
           </div>
+          <p title={formatSummary}>格式：{formatSummary}</p>
+          {(formatFilter || likedOnly) && (
+            <p>
+              已限制为{formatFilter ? ` ${formatFilter.toUpperCase()}` : ''}{likedOnly ? ' 我喜欢' : ''}
+            </p>
+          )}
         </div>
       </div>
 
@@ -1235,17 +1256,20 @@ function SongsView({
           onLikedOnlyChange={onLikedOnlyChange}
         />
 
-        <TrackListToolbar
-          tracks={tracks}
-          selectedTracks={selectedTracks}
-          canRemove={false}
-          canClear={false}
-          onPlayAll={onPlayAll}
-          onPlaySelected={onPlaySelected}
-          onPlayNextTracks={onPlayNextTracks}
-          onOpenPlaylistDialogForTracks={onOpenPlaylistDialogForTracks}
-          onBatchLike={onBatchLike}
-        />
+        {selectedTracks.length > 0 && (
+          <TrackListToolbar
+            tracks={tracks}
+            selectedTracks={selectedTracks}
+            canRemove={false}
+            canClear={false}
+            showPlayAll={false}
+            onPlayAll={onPlayAll}
+            onPlaySelected={onPlaySelected}
+            onPlayNextTracks={onPlayNextTracks}
+            onOpenPlaylistDialogForTracks={onOpenPlaylistDialogForTracks}
+            onBatchLike={onBatchLike}
+          />
+        )}
 
         <PlaylistTrackTable
           tracks={tracks}
@@ -1585,288 +1609,6 @@ function SystemPlaylistView({
   )
 }
 
-function TrackFilterBar({
-  sortField,
-  formatFilter,
-  likedOnly,
-  availableFormats,
-  onSortFieldChange,
-  onFormatFilterChange,
-  onLikedOnlyChange,
-}: {
-  sortField: TrackSortField
-  formatFilter: string
-  likedOnly: boolean
-  availableFormats: string[]
-  onSortFieldChange: (field: TrackSortField) => void
-  onFormatFilterChange: (format: string) => void
-  onLikedOnlyChange: (likedOnly: boolean) => void
-}) {
-  return (
-    <div className="track-filter-bar">
-      <label>
-        排序
-        <select value={sortField} onChange={(event) => onSortFieldChange(event.target.value as TrackSortField)}>
-          <option value="title">标题</option>
-          <option value="artist">艺术家</option>
-          <option value="album">专辑</option>
-          <option value="duration">时长</option>
-          <option value="format">格式</option>
-        </select>
-      </label>
-      <label>
-        格式
-        <select value={formatFilter} onChange={(event) => onFormatFilterChange(event.target.value)}>
-          <option value="">全部</option>
-          {availableFormats.map((format) => (
-            <option key={format} value={format}>
-              {format.toUpperCase()}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="inline-check">
-        <input type="checkbox" checked={likedOnly} onChange={(event) => onLikedOnlyChange(event.target.checked)} />
-        仅看我喜欢
-      </label>
-    </div>
-  )
-}
-
-function TrackListToolbar({
-  tracks,
-  selectedTracks,
-  canRemove,
-  canClear,
-  isClearing = false,
-  onPlayAll,
-  onPlaySelected,
-  onPlayNextTracks,
-  onOpenPlaylistDialogForTracks,
-  onBatchLike,
-  onRemoveTracks,
-  onClearTracks,
-}: {
-  tracks: Track[]
-  selectedTracks: Track[]
-  canRemove: boolean
-  canClear: boolean
-  isClearing?: boolean
-  onPlayAll: (tracks: Track[]) => void
-  onPlaySelected: (tracks: Track[]) => void
-  onPlayNextTracks: (tracks: Track[]) => void
-  onOpenPlaylistDialogForTracks: (tracks: Track[]) => void
-  onBatchLike: (tracks: Track[], liked: boolean) => void
-  onRemoveTracks?: (tracks: Track[]) => void
-  onClearTracks?: () => void
-}) {
-  const hasSelection = selectedTracks.length > 0
-  return (
-    <div className="track-toolbar">
-      <button type="button" className="primary-button" disabled={!tracks.length} onClick={() => onPlayAll(tracks)}>
-        <Play size={15} fill="currentColor" />
-        播放全部
-      </button>
-      <span>{hasSelection ? `已选 ${selectedTracks.length} 首` : '未选择歌曲'}</span>
-      <button type="button" disabled={!hasSelection} onClick={() => onPlaySelected(selectedTracks)}>
-        播放选中
-      </button>
-      <button type="button" disabled={!hasSelection} onClick={() => onPlayNextTracks(selectedTracks)}>
-        下一首播放
-      </button>
-      <button type="button" disabled={!hasSelection} onClick={() => onOpenPlaylistDialogForTracks(selectedTracks)}>
-        添加到歌单
-      </button>
-      <button type="button" disabled={!hasSelection} onClick={() => onBatchLike(selectedTracks, true)}>
-        收藏
-      </button>
-      <button type="button" disabled={!hasSelection} onClick={() => onBatchLike(selectedTracks, false)}>
-        取消收藏
-      </button>
-      {canRemove && (
-        <button type="button" className="danger" disabled={!hasSelection || !onRemoveTracks} onClick={() => onRemoveTracks?.(selectedTracks)}>
-          移出歌单
-        </button>
-      )}
-      {canClear && (
-        <button type="button" className="danger" disabled={!tracks.length || isClearing || !onClearTracks} onClick={onClearTracks}>
-          清空最近播放
-        </button>
-      )}
-    </div>
-  )
-}
-
-function PlaylistTrackTable({
-  tracks,
-  selectedTrackIds,
-  selectedTrack,
-  currentTrack,
-  playbackStatus,
-  onSelectTrack,
-  onToggleTrackSelected,
-  onToggleAllTracks,
-  onPlayTrack,
-  onToggleLike,
-  onToggleMenu,
-  onOpenPlaylistDialog,
-  onPlayNext,
-  onRemoveTrack,
-  openTrackMenuId,
-}: {
-  tracks: Track[]
-  selectedTrackIds: number[]
-  selectedTrack: Track | null
-  currentTrack: Track | null
-  playbackStatus: PlaybackStatus
-  onSelectTrack: (track: Track) => void
-  onToggleTrackSelected: (track: Track, checked: boolean) => void
-  onToggleAllTracks: (tracks: Track[], checked: boolean) => void
-  onPlayTrack: (track: Track) => void
-  onToggleLike: (track: Track) => void
-  onToggleMenu: (track: Track) => void
-  onOpenPlaylistDialog: (track: Track) => void
-  onPlayNext: (track: Track) => void
-  onRemoveTrack?: (track: Track) => void
-  openTrackMenuId: number | null
-}) {
-  const allSelected = tracks.length > 0 && tracks.every((track) => selectedTrackIds.includes(track.id))
-  return (
-    <div className="table-scroll">
-      <table className="track-table">
-        <colgroup>
-          <col className="track-col-select" />
-          <col className="track-col-play" />
-          <col className="track-col-title" />
-          <col className="track-col-like" />
-          <col className="track-col-more" />
-          <col className="track-col-artist" />
-          <col className="track-col-album" />
-          <col className="track-col-duration" />
-          <col className="track-col-format" />
-        </colgroup>
-        <thead>
-          <tr>
-            <th>
-              <input
-                type="checkbox"
-                checked={allSelected}
-                onChange={(event) => onToggleAllTracks(tracks, event.target.checked)}
-                aria-label="选择当前列表全部歌曲"
-              />
-            </th>
-            <th aria-label="播放"></th>
-            <th>标题</th>
-            <th aria-label="收藏"></th>
-            <th aria-label="更多"></th>
-            <th>艺术家</th>
-            <th>专辑</th>
-            <th>时长</th>
-            <th>格式</th>
-          </tr>
-        </thead>
-        <tbody>
-          {tracks.map((track) => (
-            <tr
-              key={track.id}
-              className={trackRowClass(track, selectedTrack, currentTrack, playbackStatus, selectedTrackIds.includes(track.id))}
-              onClick={() => onSelectTrack(track)}
-              onDoubleClick={() => onPlayTrack(track)}
-            >
-              <td>
-                <input
-                  type="checkbox"
-                  checked={selectedTrackIds.includes(track.id)}
-                  onChange={(event) => onToggleTrackSelected(track, event.target.checked)}
-                  onClick={(event) => event.stopPropagation()}
-                  aria-label={`选择 ${track.title}`}
-                />
-              </td>
-              <td>
-                <button
-                  type="button"
-                  className="row-icon-button play-row-button"
-                  aria-label={`播放 ${track.title}`}
-                  title="播放"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    onPlayTrack(track)
-                  }}
-                >
-                  <Play size={15} fill="currentColor" />
-                </button>
-              </td>
-              <td className="track-title-cell" title={track.title}>
-                <button type="button" className="track-title">
-                  {track.title}
-                </button>
-              </td>
-              <td className="track-action-cell">
-                <button
-                  type="button"
-                  className={`row-icon-button like-row-button ${track.liked ? 'liked' : ''}`}
-                  aria-label={track.liked ? '取消喜欢' : '加入我喜欢'}
-                  title={track.liked ? '取消喜欢' : '加入我喜欢'}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    onToggleLike(track)
-                  }}
-                >
-                  <Heart size={15} fill={track.liked ? 'currentColor' : 'none'} />
-                </button>
-              </td>
-              <td className="track-menu-cell track-action-cell">
-                <button
-                  type="button"
-                  className="row-icon-button"
-                  aria-label="更多操作"
-                  title="更多操作"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    onToggleMenu(track)
-                  }}
-                >
-                  <MoreHorizontal size={16} />
-                </button>
-                {openTrackMenuId === track.id && (
-                  <div className="track-menu" onClick={(event) => event.stopPropagation()}>
-                    <button type="button" onClick={() => onOpenPlaylistDialog(track)}>
-                      添加到歌单
-                    </button>
-                    <button type="button" onClick={() => onPlayNext(track)}>
-                      下一首播放
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard?.writeText(track.path)
-                        onToggleMenu(track)
-                      }}
-                    >
-                      复制路径
-                    </button>
-                    {onRemoveTrack && (
-                      <button type="button" onClick={() => onRemoveTrack(track)}>
-                        移出歌单
-                      </button>
-                    )}
-                  </div>
-                )}
-              </td>
-              <td className={`artist-cell soft-text-cell ${!track.artist ? 'muted-cell' : ''}`} title={displayArtist(track)}>{displayArtist(track)}</td>
-              <td className={`album-cell soft-text-cell ${!track.album ? 'muted-cell' : ''}`} title={displayAlbum(track)}>{displayAlbum(track)}</td>
-              <td className="duration-cell"><span>{formatDuration(track.durationMs)}</span></td>
-              <td className="format-cell">
-                <span className="format-chip">{track.format}</span>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
 function LibrariesView({
   libraries,
   libraryPath,
@@ -2021,15 +1763,6 @@ function LibraryRow({
   )
 }
 
-function StateMessage({ title, body, tone = 'default' }: { title: string; body: string; tone?: 'default' | 'error' }) {
-  return (
-    <div className={`empty-state ${tone}`}>
-      <h3>{title}</h3>
-      <p>{body}</p>
-    </div>
-  )
-}
-
 function isActiveScan(status: ScanStatus) {
   return status === 'waiting' || status === 'running'
 }
@@ -2062,20 +1795,6 @@ function viewTitle(view: ViewMode) {
     case 'recent':
       return '最近播放'
   }
-}
-
-function trackRowClass(track: Track, selectedTrack: Track | null, currentTrack: Track | null, status: PlaybackStatus, checked: boolean) {
-  const classes: string[] = []
-  if (checked) {
-    classes.push('checked')
-  }
-  if (selectedTrack?.id === track.id) {
-    classes.push('selected')
-  }
-  if (currentTrack?.id === track.id) {
-    classes.push('current', status)
-  }
-  return classes.join(' ') || undefined
 }
 
 function errorMessage(error: unknown, fallback: string) {
