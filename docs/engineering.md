@@ -85,8 +85,9 @@ DELETE /api/playlists/{id}/tracks/{trackId}
 GET    /api/playlists/liked/tracks
 POST   /api/tracks/{id}/like
 DELETE /api/tracks/{id}/like
-GET    /api/playlists/recent/tracks
+GET    /api/playlists/recent/tracks   # 返回 { track, lastPlayedAt }[]
 POST   /api/tracks/{id}/recent-play
+DELETE /api/playlists/recent/tracks
 ```
 
 `DELETE /api/libraries/{id}` 会删除媒体库索引、扫描状态和不再被其他媒体库引用的 music；它不会删除本地音乐文件。
@@ -138,8 +139,14 @@ web/src/App.tsx
 
 - `web/src/App.tsx`
   - v0.6 主界面编排。
-  - 媒体库页、歌曲页、普通歌单、我喜欢、最近播放。
+  - 媒体库卡片、歌曲工作区、普通歌单工作台、我喜欢、最近播放。
   - 播放状态、播放队列、播放进度、切歌、音量和错误状态。
+
+- `web/src/components/AppShell.tsx`
+  - 应用壳、可折叠产品导航和全局搜索。
+
+- `web/src/components/TrackList.tsx`
+  - 共享歌曲筛选、批量操作条、歌曲表格和状态展示。
 
 - `web/src/player.ts`
   - 播放模式轮转、下一首计算、队列插入和播放器本地存储兼容。
@@ -152,14 +159,18 @@ web/src/App.tsx
 
 - `web/src/components/QueueDrawer.tsx`
   - 从播放器入口打开的播放队列抽屉。
+  - 桌面是右侧抽屉，移动端是近全屏 sheet。
 
 - `web/src/api.ts`
   - 前端 API client。
   - 类型定义。
   - mock 开关。
 
+- `web/src/interface-flows.ts`
+  - v0.6 界面流程的可测试纯逻辑：全局搜索跳转、批量操作显示、最近播放映射和媒体库进度。
+
 - `web/src/App.css`
-  - 页面样式。
+  - v0.6 主界面、媒体库卡片、桌面播放器、移动迷你播放器和响应式队列样式。
 
 开发期前端运行在：
 
