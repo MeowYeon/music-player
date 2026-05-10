@@ -11,6 +11,8 @@ import {
   ListPlus,
   MoreHorizontal,
   Pause,
+  PanelLeftClose,
+  PanelLeftOpen,
   Play,
   Plus,
   RefreshCw,
@@ -74,6 +76,7 @@ function App() {
   const lastRecordedTrackIdRef = useRef<number | null>(null)
   const storedPlayerStateRef = useRef(readStoredPlayerState())
   const [view, setView] = useState<ViewMode>('songs')
+  const [isNavigationCollapsed, setIsNavigationCollapsed] = useState(false)
   const [query, setQuery] = useState('')
   const [sortField, setSortField] = useState<TrackSortField>('title')
   const [formatFilter, setFormatFilter] = useState('')
@@ -719,7 +722,7 @@ function App() {
   const canSearch = view === 'songs' || view === 'libraries'
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${isNavigationCollapsed ? 'nav-collapsed' : 'nav-expanded'}`}>
       <aside className="sidebar" aria-label="主导航">
         <div className="sidebar-brand">
           <div className="brand-mark" title="聆听">
@@ -728,12 +731,23 @@ function App() {
           <strong>聆听</strong>
         </div>
 
+        <button
+          type="button"
+          className="nav-collapse-button"
+          aria-label={isNavigationCollapsed ? '展开导航' : '收起导航'}
+          aria-expanded={!isNavigationCollapsed}
+          onClick={() => setIsNavigationCollapsed((collapsed) => !collapsed)}
+        >
+          {isNavigationCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+          <span>{isNavigationCollapsed ? '展开' : '收起'}</span>
+        </button>
+
         <nav className="nav-list">
           <NavItem icon={<ListMusic size={20} />} label="歌曲" active={view === 'songs'} onClick={() => setView('songs')} />
-          <NavItem icon={<Library size={20} />} label="媒体库" active={view === 'libraries'} onClick={() => setView('libraries')} />
           <NavItem icon={<ListPlus size={20} />} label="歌单" active={view === 'playlists'} onClick={() => setView('playlists')} />
           <NavItem icon={<Heart size={20} />} label="我喜欢" active={view === 'liked'} onClick={() => setView('liked')} />
           <NavItem icon={<History size={20} />} label="最近播放" active={view === 'recent'} onClick={() => setView('recent')} />
+          <NavItem icon={<Library size={20} />} label="媒体库" active={view === 'libraries'} onClick={() => setView('libraries')} />
         </nav>
       </aside>
 
