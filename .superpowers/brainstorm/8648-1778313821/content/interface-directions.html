@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>阿言界面重设计方向</title>
+  <style>
+    :root {
+      --ink: #16211f;
+      --muted: #68736f;
+      --line: #dfe6e2;
+      --paper: #fbfbf7;
+      --mint: #14966f;
+      --mint-soft: #e6f5ef;
+      --amber: #d89b2b;
+      --coral: #cf634d;
+      --blue: #3e6f8f;
+      --shadow: 0 18px 45px rgba(31, 49, 45, 0.08);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: #f6f5ef;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.74), rgba(246,245,239,.92)),
+        #f6f5ef;
+    }
+
+    .page {
+      max-width: 1460px;
+      margin: 0 auto;
+      padding: 34px 28px 44px;
+    }
+
+    .intro {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 30px;
+      letter-spacing: 0;
+    }
+
+    .intro p {
+      max-width: 740px;
+      margin: 8px 0 0;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+
+    .hint {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,.74);
+      padding: 10px 12px;
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .choice {
+      display: flex;
+      min-width: 0;
+      flex-direction: column;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: rgba(255,255,255,.86);
+      box-shadow: var(--shadow);
+      cursor: pointer;
+      transition: border-color .18s ease, transform .18s ease;
+    }
+
+    .choice:hover {
+      transform: translateY(-2px);
+      border-color: rgba(20,150,111,.42);
+    }
+
+    .choice.selected {
+      border-color: var(--mint);
+      outline: 3px solid rgba(20,150,111,.18);
+    }
+
+    .preview {
+      aspect-ratio: 16 / 11;
+      border-bottom: 1px solid var(--line);
+      background: #f7f8f4;
+      padding: 12px;
+    }
+
+    .mini-shell {
+      display: grid;
+      height: 100%;
+      min-height: 0;
+      border: 1px solid #d8e0db;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fffefa;
+    }
+
+    .mini-side {
+      min-width: 0;
+      border-right: 1px solid #e3e8e5;
+      background: #fbfcf8;
+      padding: 12px 8px;
+    }
+
+    .mini-brand {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-bottom: 14px;
+      font-weight: 760;
+      font-size: 14px;
+    }
+
+    .mark {
+      display: grid;
+      width: 26px;
+      height: 26px;
+      place-items: center;
+      border-radius: 7px;
+      background: var(--mint-soft);
+      color: var(--mint);
+      font-size: 13px;
+    }
+
+    .nav {
+      display: grid;
+      gap: 7px;
+    }
+
+    .nav div {
+      height: 24px;
+      border-radius: 7px;
+      background: transparent;
+    }
+
+    .nav .on { background: var(--mint-soft); }
+    .nav div::before {
+      display: block;
+      width: 62%;
+      height: 7px;
+      margin: 8px 0 0 8px;
+      border-radius: 9px;
+      background: #c8d1cd;
+      content: "";
+    }
+
+    .nav .on::before { background: var(--mint); }
+    .mini-main {
+      min-width: 0;
+      padding: 12px;
+    }
+
+    .mini-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .title-lines { display: grid; gap: 6px; width: 42%; }
+    .line { height: 8px; border-radius: 9px; background: #202b29; }
+    .line.sub { width: 66%; background: #aeb9b5; }
+    .search {
+      width: 34%;
+      height: 24px;
+      border: 1px solid #dde4e0;
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .hero-strip {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 10px;
+      border: 1px solid #dfe6e2;
+      border-radius: 8px;
+      background: #fbfdf9;
+      padding: 10px;
+    }
+
+    .hero-strip .bars {
+      display: flex;
+      align-items: end;
+      gap: 3px;
+      height: 28px;
+    }
+
+    .hero-strip .bars span {
+      width: 5px;
+      border-radius: 8px 8px 0 0;
+      background: var(--mint);
+    }
+
+    .table {
+      display: grid;
+      border: 1px solid #e4e9e6;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 24px 1.2fr .8fr .8fr 42px;
+      gap: 8px;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 8px;
+      border-bottom: 1px solid #edf0ee;
+    }
+
+    .row:last-child { border-bottom: 0; }
+    .row.current { background: var(--mint-soft); }
+    .cell { height: 7px; border-radius: 8px; background: #c8d1cd; }
+    .playdot {
+      width: 17px;
+      height: 17px;
+      border: 1px solid var(--mint);
+      border-radius: 50%;
+    }
+
+    .mini-player {
+      display: grid;
+      grid-template-columns: 120px 1fr 72px;
+      gap: 12px;
+      align-items: center;
+      border-top: 1px solid #dfe6e2;
+      background: #fff;
+      padding: 10px 12px;
+    }
+
+    .art {
+      width: 38px;
+      height: 38px;
+      border-radius: 8px;
+      background:
+        linear-gradient(135deg, rgba(20,150,111,.92), rgba(62,111,143,.72)),
+        #dfe6e2;
+    }
+
+    .controls {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .ctrl {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #e7eee9;
+    }
+
+    .ctrl.main { background: var(--mint); }
+    .progress { height: 4px; border-radius: 10px; background: #dce4df; }
+    .progress::before {
+      display: block;
+      width: 45%;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--mint);
+      content: "";
+    }
+
+    .body {
+      padding: 16px 16px 18px;
+    }
+
+    .body h2 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .body p {
+      margin: 8px 0 14px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .tag {
+      border: 1px solid #dfe6e2;
+      border-radius: 999px;
+      padding: 5px 8px;
+      color: #52605c;
+      font-size: 12px;
+      background: #fbfcf8;
+    }
+
+    .a .mini-shell {
+      grid-template-columns: 74px 1fr;
+      grid-template-rows: 1fr 58px;
+    }
+    .a .mini-side { grid-row: 1 / span 2; }
+
+    .b .mini-shell {
+      grid-template-columns: 1fr 138px;
+      grid-template-rows: 1fr 58px;
+    }
+    .b .mini-side {
+      grid-column: 2;
+      grid-row: 1;
+      border-left: 1px solid #e3e8e5;
+      border-right: 0;
+      background: #fffdfa;
+    }
+    .b .mini-main { grid-column: 1; grid-row: 1; }
+    .b .mini-player { grid-column: 1 / span 2; }
+    .b .hero-strip {
+      grid-template-columns: 1fr;
+      background: #16211f;
+    }
+    .b .hero-strip .line { background: #fff; }
+    .b .hero-strip .line.sub { background: #9bcab9; }
+    .b .hero-strip .bars span:nth-child(1) { height: 14px; background: #d89b2b; }
+    .b .hero-strip .bars span:nth-child(2) { height: 26px; background: #14966f; }
+    .b .hero-strip .bars span:nth-child(3) { height: 18px; background: #3e6f8f; }
+    .b .hero-strip .bars span:nth-child(4) { height: 30px; background: #cf634d; }
+
+    .c .mini-shell {
+      grid-template-columns: 1fr;
+      grid-template-rows: 40px 1fr 58px;
+    }
+    .c .mini-side {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-right: 0;
+      border-bottom: 1px solid #e3e8e5;
+      padding: 8px 12px;
+    }
+    .c .mini-brand { margin: 0; }
+    .c .nav {
+      flex: 1;
+      grid-template-columns: repeat(4, 1fr);
+    }
+    .c .hero-strip {
+      grid-template-columns: 1fr 80px;
+      border-style: dashed;
+    }
+    .c .row { grid-template-columns: 24px 1.4fr .8fr 42px; }
+
+    @media (max-width: 1180px) {
+      .grid { grid-template-columns: 1fr; }
+      .preview { aspect-ratio: 16 / 8; }
+      .hint { white-space: normal; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="intro">
+      <div>
+        <h1>阿言 / Ayan 界面重设计方向</h1>
+        <p>这次先不加新功能：仍然围绕媒体库、歌曲、歌单、喜欢、最近播放和底部播放器。请选择你更想要的整体方向，后面我会把它细化成可实现设计。</p>
+      </div>
+      <div class="hint">点击一张方案卡片选择，选完回到终端告诉我。</div>
+    </section>
+
+    <section class="grid">
+      <article class="choice a" data-choice="a" onclick="toggleSelect(this)">
+        <div class="preview">
+          <div class="mini-shell">
+            <aside class="mini-side">
+              <div class="mini-brand"><span class="mark">言</span><span>阿言</span></div>
+              <div class="nav"><div class="on"></div><div></div><div></div><div></div><div></div></div>
+            </aside>
+            <section class="mini-main">
+              <div class="mini-top">
+                <div class="title-lines"><span class="line"></span><span class="line sub"></span></div>
+                <div class="search"></div>
+              </div>
+              <div class="hero-strip">
+                <div class="title-lines"><span class="line"></span><span class="line sub"></span></div>
+                <div class="bars"><span style="height:14px"></span><span style="height:24px"></span><span style="height:19px"></span><span style="height:28px"></span></div>
+              </div>
+              <div class="table">
+                <div class="row current"><span class="playdot"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span></div>
+                <div class="row"><span class="playdot"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span></div>
+                <div class="row"><span class="playdot"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span></div>
+              </div>
+            </section>
+            <footer class="mini-player">
+              <div class="art"></div><div><div class="controls"><span class="ctrl"></span><span class="ctrl main"></span><span class="ctrl"></span></div><div class="progress"></div></div><div class="progress"></div>
+            </footer>
+          </div>
+        </div>
+        <div class="body">
+          <h2>A. 清爽工具型</h2>
+          <p>最贴近当前文档：左侧导航、顶部搜索、主表格、底部播放器。重点是更舒服的信息密度、更稳的表格和更精致的播放器。</p>
+          <div class="tags"><span class="tag">低风险</span><span class="tag">MVP 最稳</span><span class="tag">适合长期使用</span></div>
+        </div>
+      </article>
+
+      <article class="choice b" data-choice="b" onclick="toggleSelect(this)">
+        <div class="preview">
+          <div class="mini-shell">
+            <section class="mini-main">
+              <div class="mini-top">
+                <div class="title-lines"><span class="line"></span><span class="line sub"></span></div>
+                <div class="search"></div>
+              </div>
+              <div class="hero-strip">
+                <div class="title-lines"><span class="line"></span><span class="line sub"></span></div>
+                <div class="bars"><span></span><span></span><span></span><span></span></div>
+              </div>
+              <div class="table">
+                <div class="row current"><span class="playdot"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span></div>
+                <div class="row"><span class="playdot"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span></div>
+                <div class="row"><span class="playdot"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span></div>
+              </div>
+            </section>
+            <aside class="mini-side">
+              <div class="mini-brand"><span class="mark">言</span><span>播放中</span></div>
+              <div class="nav"><div class="on"></div><div></div><div></div><div></div></div>
+            </aside>
+            <footer class="mini-player">
+              <div class="art"></div><div><div class="controls"><span class="ctrl"></span><span class="ctrl main"></span><span class="ctrl"></span></div><div class="progress"></div></div><div class="progress"></div>
+            </footer>
+          </div>
+        </div>
+        <div class="body">
+          <h2>B. 音乐厅型</h2>
+          <p>强化“正在播放”和队列氛围：右侧常驻当前播放/队列，主区仍是歌曲管理。更有音乐应用感，但会牺牲一点表格横向空间。</p>
+          <div class="tags"><span class="tag">更有记忆点</span><span class="tag">适合播放体验</span><span class="tag">中等改动</span></div>
+        </div>
+      </article>
+
+      <article class="choice c" data-choice="c" onclick="toggleSelect(this)">
+        <div class="preview">
+          <div class="mini-shell">
+            <aside class="mini-side">
+              <div class="mini-brand"><span class="mark">言</span><span>阿言</span></div>
+              <div class="nav"><div class="on"></div><div></div><div></div><div></div></div>
+            </aside>
+            <section class="mini-main">
+              <div class="mini-top">
+                <div class="title-lines"><span class="line"></span><span class="line sub"></span></div>
+                <div class="search"></div>
+              </div>
+              <div class="hero-strip">
+                <div class="title-lines"><span class="line"></span><span class="line sub"></span></div>
+                <div class="bars"><span style="height:16px"></span><span style="height:22px"></span><span style="height:28px"></span></div>
+              </div>
+              <div class="table">
+                <div class="row current"><span class="playdot"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span></div>
+                <div class="row"><span class="playdot"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span></div>
+                <div class="row"><span class="playdot"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span></div>
+              </div>
+            </section>
+            <footer class="mini-player">
+              <div class="art"></div><div><div class="controls"><span class="ctrl"></span><span class="ctrl main"></span><span class="ctrl"></span></div><div class="progress"></div></div><div class="progress"></div>
+            </footer>
+          </div>
+        </div>
+        <div class="body">
+          <h2>C. 顶栏紧凑型</h2>
+          <p>把导航改成顶部标签，主区更像一个专注的音乐库窗口。空间利用好，移动端也自然，但和当前代码结构差异更大。</p>
+          <div class="tags"><span class="tag">最轻盈</span><span class="tag">移动友好</span><span class="tag">改动较大</span></div>
+        </div>
+      </article>
+    </section>
+  </main>
+  <script>
+    function toggleSelect(el) {
+      document.querySelectorAll('.choice').forEach((node) => node.classList.remove('selected'));
+      el.classList.add('selected');
+      const event = {
+        type: 'click',
+        choice: el.dataset.choice,
+        text: el.querySelector('h2')?.textContent || el.dataset.choice,
+        timestamp: Math.floor(Date.now() / 1000)
+      };
+      fetch('/__event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(event)
+      }).catch(() => {});
+    }
+  </script>
+</body>
+</html>

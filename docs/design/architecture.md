@@ -94,10 +94,21 @@ Go 后端
   - React 入口。
 
 - `web/src/App.tsx`
-  - 主界面、导航、媒体库页、歌曲页、歌单页、我喜欢、最近播放和底部播放器。
-  - 维护播放状态、播放队列、播放顺序、音量、当前歌曲和临时 UI 状态。
-  - 使用 `localStorage` 记住音量、播放模式、队列和当前歌曲，但不自动续播。
+  - v0.6 主界面编排入口。
+  - 维护数据查询、mutation、播放状态、播放队列、音量、当前歌曲和临时 UI 状态。
   - 使用 TanStack Query 轮询媒体库、歌曲、歌单和活跃扫描状态。
+
+- `web/src/player.ts`
+  - 播放模式轮转、队列插入、下一首计算和播放器本地存储兼容逻辑。
+  - 使用 `localStorage` 记住音量、播放模式、队列和当前歌曲，但不自动续播。
+  - 新 key 为 `lingting.player.v1`，读取时兼容旧 key `ayan.player.v1`。
+
+- `web/src/tracks.ts` 和 `web/src/playback.ts`
+  - 保存歌曲排序、展示 fallback、播放状态文案和时长格式化等纯逻辑。
+
+- `web/src/components/QueueDrawer.tsx`
+  - 播放队列抽屉。
+  - 队列只通过底部播放器入口打开，不作为右侧常驻信息栏。
 
 - `web/src/api.ts`
   - 前端 API client 和类型定义。
@@ -105,7 +116,7 @@ Go 后端
   - 默认请求真实后端。
 
 - `web/src/App.css`
-  - 当前页面样式。
+  - v0.6 无右栏主界面、导航、页面、表格、底部播放器和队列抽屉样式。
 
 ## 数据库设计
 

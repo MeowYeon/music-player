@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>聆听无右栏双版本对比</title>
+  <style>
+    :root {
+      --ink: #141a18;
+      --muted: #66716d;
+      --line: #dce3df;
+      --paper: #f4f1ea;
+      --panel: #fffdf7;
+      --mint: #0f8764;
+      --mint-soft: #e2f2eb;
+      --pine: #213c35;
+      --gold: #c58c2e;
+      --shadow: 0 24px 70px rgba(27, 37, 34, .12);
+      color: var(--ink);
+      background: var(--paper);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; }
+    main {
+      min-height: 100vh;
+      padding: 24px;
+      background: linear-gradient(180deg, rgba(255,255,255,.7), rgba(244,241,234,.98)), var(--paper);
+    }
+    .intro {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 20px;
+      max-width: 1540px;
+      margin: 0 auto 18px;
+    }
+    h1 { margin: 0; font-size: 28px; letter-spacing: 0; }
+    .intro p { margin: 7px 0 0; max-width: 820px; color: var(--muted); line-height: 1.55; font-size: 14px; }
+    .hint {
+      border: 1px solid rgba(15,135,100,.35);
+      border-radius: 8px;
+      background: var(--mint-soft);
+      color: var(--mint);
+      padding: 10px 12px;
+      font-size: 13px;
+      font-weight: 760;
+      white-space: nowrap;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      max-width: 1540px;
+      margin: 0 auto;
+    }
+    .option {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: rgba(255,255,255,.84);
+      box-shadow: var(--shadow);
+      cursor: pointer;
+    }
+    .option.selected {
+      border-color: var(--mint);
+      outline: 3px solid rgba(15,135,100,.18);
+    }
+    .label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid var(--line);
+      padding: 13px 15px;
+      background: #fffdf7;
+    }
+    .label h2 { margin: 0; font-size: 17px; }
+    .label span { color: var(--muted); font-size: 12px; }
+    .preview {
+      aspect-ratio: 16 / 10;
+      padding: 12px;
+      background: #f8f6ef;
+    }
+    .mock {
+      display: grid;
+      height: 100%;
+      border: 1px solid #d7dfda;
+      border-radius: 8px;
+      overflow: hidden;
+      background: rgba(255,253,247,.9);
+    }
+    .baseline { grid-template-rows: 48px minmax(0, 1fr); }
+    .premium { grid-template-columns: 46px minmax(0, 1fr); }
+    .topbar {
+      display: grid;
+      grid-template-columns: 120px 1fr 150px;
+      gap: 10px;
+      align-items: center;
+      border-bottom: 1px solid var(--line);
+      padding: 8px 10px;
+      background: #fffdf7;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-weight: 800;
+      font-size: 13px;
+    }
+    .mark {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      place-items: center;
+      border-radius: 8px;
+      background: var(--mint-soft);
+      color: var(--mint);
+      font-size: 13px;
+      font-weight: 850;
+    }
+    .tabs {
+      display: flex;
+      gap: 5px;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .tab {
+      width: 52px;
+      height: 24px;
+      border-radius: 8px;
+      background: #eef2ee;
+    }
+    .tab.on { background: var(--mint-soft); }
+    .search {
+      height: 26px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+    .rail {
+      border-right: 1px solid var(--line);
+      background: #fffdf7;
+      padding: 10px 7px;
+    }
+    .railnav { display: grid; gap: 8px; margin-top: 20px; }
+    .railnav div {
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      background: #eef2ee;
+    }
+    .railnav .on { background: var(--pine); }
+    .workspace {
+      display: grid;
+      grid-template-rows: auto auto auto 1fr auto;
+      gap: 9px;
+      min-width: 0;
+      padding: 12px;
+    }
+    .premium .workspace { padding: 12px 13px; }
+    .top {
+      display: grid;
+      grid-template-columns: 1fr 150px;
+      gap: 10px;
+      align-items: center;
+    }
+    .line {
+      height: 8px;
+      border-radius: 99px;
+      background: #c9d2ce;
+    }
+    .dark { background: #17211f; }
+    .hero {
+      display: grid;
+      grid-template-columns: 1fr 120px;
+      min-height: 82px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fffdf7;
+    }
+    .baseline .hero { grid-template-columns: 1fr auto; min-height: 58px; }
+    .copy { display: grid; align-content: center; gap: 7px; padding: 12px; }
+    .wave {
+      display: flex;
+      align-items: end;
+      gap: 5px;
+      background: var(--pine);
+      padding: 12px;
+    }
+    .baseline .wave {
+      background: transparent;
+      padding: 8px 12px;
+    }
+    .wave span {
+      width: 9px;
+      border-radius: 99px 99px 0 0;
+      background: rgba(255,255,255,.84);
+    }
+    .baseline .wave span { background: var(--mint); width: 7px; }
+    .wave span:nth-child(2n) { background: #7fc5ad; }
+    .wave span:nth-child(3n) { background: var(--gold); }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 7px;
+    }
+    .stat {
+      height: 39px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,.78);
+      padding: 8px;
+    }
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .seg {
+      display: flex;
+      gap: 4px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 3px;
+    }
+    .seg span {
+      width: 44px;
+      height: 22px;
+      border-radius: 7px;
+      background: #eef2ee;
+    }
+    .seg span:first-child { background: var(--pine); }
+    .baseline .seg span:first-child { background: var(--mint-soft); }
+    .button { width: 78px; height: 28px; border-radius: 8px; background: var(--mint); }
+    .table {
+      display: grid;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 24px 1.6fr .8fr .8fr 42px;
+      gap: 8px;
+      align-items: center;
+      min-height: 29px;
+      padding: 0 8px;
+      border-bottom: 1px solid #edf1ee;
+    }
+    .row:last-child { border-bottom: 0; }
+    .row.current { background: var(--mint-soft); }
+    .dot {
+      width: 17px;
+      height: 17px;
+      border: 1px solid var(--mint);
+      border-radius: 50%;
+      background: #fff;
+    }
+    .player {
+      display: grid;
+      grid-template-columns: 110px 1fr 110px;
+      gap: 8px;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 7px;
+    }
+    .progress {
+      height: 5px;
+      border-radius: 99px;
+      background: #dfe6e2;
+      overflow: hidden;
+    }
+    .progress::before {
+      display: block;
+      width: 40%;
+      height: 100%;
+      background: var(--mint);
+      content: "";
+    }
+    .notes {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      padding: 15px;
+      border-top: 1px solid var(--line);
+    }
+    .notes h3 { margin: 0 0 8px; font-size: 14px; }
+    .notes ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.65;
+    }
+    @media (max-width: 1200px) {
+      .grid { grid-template-columns: 1fr; }
+      .preview { aspect-ratio: 16 / 8; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="intro">
+      <div>
+        <h1>聆听：两个无右栏版本</h1>
+        <p>两个版本都去掉了右侧信息列，保留同一套功能边界。左边更传统清爽，右边更像高级桌面应用。现在主要是在选“导航和整体气质”。</p>
+      </div>
+      <div class="hint">点击版本卡片可以标记选择</div>
+    </section>
+
+    <section class="grid">
+      <article class="option" data-choice="baseline-no-right" onclick="selectOption(this)">
+        <div class="label">
+          <h2>基准无右栏版</h2>
+          <span>顶部导航 · 清爽稳定</span>
+        </div>
+        <div class="preview">
+          <div class="mock baseline">
+            <header class="topbar">
+              <div class="brand"><span class="mark">聆</span>聆听</div>
+              <div class="tabs"><div class="tab on"></div><div class="tab"></div><div class="tab"></div><div class="tab"></div></div>
+              <div class="search"></div>
+            </header>
+            <section class="workspace">
+              <div class="top"><div><div class="line dark" style="width:24%"></div><div class="line" style="width:46%; margin-top:7px"></div></div><div class="stats"><div class="stat"></div><div class="stat"></div></div></div>
+              <div class="hero"><div class="copy"><div class="line dark" style="width:42%"></div><div class="line" style="width:62%"></div></div><div class="wave"><span style="height:22px"></span><span style="height:38px"></span><span style="height:30px"></span><span style="height:44px"></span></div></div>
+              <div class="toolbar"><div class="seg"><span></span><span></span><span></span><span></span></div><div class="button"></div></div>
+              <div class="table">
+                <div class="row current"><span class="dot"></span><span class="line dark"></span><span class="line"></span><span class="line"></span><span class="line"></span></div>
+                <div class="row"><span class="dot"></span><span class="line"></span><span class="line"></span><span class="line"></span><span class="line"></span></div>
+                <div class="row"><span class="dot"></span><span class="line"></span><span class="line"></span><span class="line"></span><span class="line"></span></div>
+                <div class="row"><span class="dot"></span><span class="line"></span><span class="line"></span><span class="line"></span><span class="line"></span></div>
+              </div>
+              <div class="player"><div class="line dark"></div><div class="progress"></div><div class="line"></div></div>
+            </section>
+          </div>
+        </div>
+        <div class="notes">
+          <div>
+            <h3>适合</h3>
+            <ul>
+              <li>想要低学习成本</li>
+              <li>偏工具、偏网页应用</li>
+              <li>实现风险最低</li>
+            </ul>
+          </div>
+          <div>
+            <h3>不足</h3>
+            <ul>
+              <li>记忆点弱一点</li>
+              <li>顶部导航较普通</li>
+              <li>高级感主要靠细节支撑</li>
+            </ul>
+          </div>
+        </div>
+      </article>
+
+      <article class="option selected" data-choice="premium-no-right" onclick="selectOption(this)">
+        <div class="label">
+          <h2>高级无右栏版</h2>
+          <span>窄图标栏 · 产品感更强</span>
+        </div>
+        <div class="preview">
+          <div class="mock premium">
+            <aside class="rail">
+              <div class="mark">聆</div>
+              <div class="railnav"><div class="on"></div><div></div><div></div><div></div><div></div></div>
+            </aside>
+            <section class="workspace">
+              <div class="top"><div><div class="line dark" style="width:24%"></div><div class="line" style="width:46%; margin-top:7px"></div></div><div class="search"></div></div>
+              <div class="hero"><div class="copy"><div class="line dark" style="width:34%"></div><div class="line" style="width:68%"></div></div><div class="wave"><span style="height:28px"></span><span style="height:62px"></span><span style="height:42px"></span><span style="height:76px"></span><span style="height:50px"></span></div></div>
+              <div class="stats"><div class="stat"><div class="line dark" style="width:38%"></div></div><div class="stat"><div class="line dark" style="width:28%"></div></div><div class="stat"><div class="line dark" style="width:48%"></div></div><div class="stat"><div class="line dark" style="width:34%"></div></div></div>
+              <div class="toolbar"><div class="seg"><span></span><span></span><span></span><span></span></div><div class="button"></div></div>
+              <div class="table">
+                <div class="row current"><span class="dot"></span><span class="line dark"></span><span class="line"></span><span class="line"></span><span class="line"></span></div>
+                <div class="row"><span class="dot"></span><span class="line"></span><span class="line"></span><span class="line"></span><span class="line"></span></div>
+                <div class="row"><span class="dot"></span><span class="line"></span><span class="line"></span><span class="line"></span><span class="line"></span></div>
+                <div class="row"><span class="dot"></span><span class="line"></span><span class="line"></span><span class="line"></span><span class="line"></span></div>
+              </div>
+              <div class="player"><div class="line dark"></div><div class="progress"></div><div class="line"></div></div>
+            </section>
+          </div>
+        </div>
+        <div class="notes">
+          <div>
+            <h3>适合</h3>
+            <ul>
+              <li>想要更强产品识别度</li>
+              <li>偏桌面应用质感</li>
+              <li>导航不挤占顶部搜索和标题</li>
+            </ul>
+          </div>
+          <div>
+            <h3>不足</h3>
+            <ul>
+              <li>图标需要 tooltip</li>
+              <li>移动端要切换为顶部/底部导航</li>
+              <li>实现比基准版多一点</li>
+            </ul>
+          </div>
+        </div>
+      </article>
+    </section>
+  </main>
+  <script>
+    function selectOption(el) {
+      document.querySelectorAll('.option').forEach((node) => node.classList.remove('selected'));
+      el.classList.add('selected');
+      fetch('/__event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'click',
+          choice: el.dataset.choice,
+          text: el.querySelector('h2').textContent,
+          timestamp: Math.floor(Date.now() / 1000)
+        })
+      }).catch(() => {});
+    }
+  </script>
+</body>
+</html>

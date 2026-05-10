@@ -11,8 +11,6 @@ import {
   ListPlus,
   MoreHorizontal,
   Pause,
-  PanelLeftClose,
-  PanelLeftOpen,
   Play,
   Plus,
   RefreshCw,
@@ -54,20 +52,21 @@ import {
   type ScanTask,
   type Track,
 } from './api'
+import { QueueDrawer } from './components/QueueDrawer'
+import {
+  getNextPlayMode,
+  getNextQueueTrack,
+  insertTracksAfterCurrent as insertTracksAfterCurrentInQueue,
+  readStoredPlayerState,
+  writeStoredPlayerState,
+  type PlayMode,
+  type StoredPlayerState,
+} from './player'
+import { formatDuration, formatDurationSeconds, playbackLabel, playModeLabel, type PlaybackStatus } from './playback'
+import { displayAlbum, displayArtist, sortTracks, type TrackSortField } from './tracks'
 
 const defaultLibraryPath = '/mnt/c/Users/guohp/Music/test'
-const playerStorageKey = 'ayan.player.v1'
-type PlaybackStatus = 'idle' | 'loading' | 'playing' | 'paused' | 'ended' | 'error'
 type ViewMode = 'libraries' | 'songs' | 'playlists' | 'liked' | 'recent'
-type PlayMode = 'sequence' | 'loop' | 'shuffle' | 'single'
-type TrackSortField = 'title' | 'artist' | 'album' | 'duration' | 'format'
-
-type StoredPlayerState = {
-  volume?: number
-  playMode?: PlayMode
-  queueTrackIds?: number[]
-  currentTrackId?: number | null
-}
 
 function App() {
   const queryClient = useQueryClient()
@@ -75,8 +74,7 @@ function App() {
   const previousActiveCountRef = useRef(0)
   const lastRecordedTrackIdRef = useRef<number | null>(null)
   const storedPlayerStateRef = useRef(readStoredPlayerState())
-  const [view, setView] = useState<ViewMode>('libraries')
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const [view, setView] = useState<ViewMode>('songs')
   const [query, setQuery] = useState('')
   const [sortField, setSortField] = useState<TrackSortField>('title')
   const [formatFilter, setFormatFilter] = useState('')
@@ -592,15 +590,7 @@ function App() {
   }
 
   function insertTracksAfterCurrent(trackList: Track[]) {
-    setQueue((items) => {
-      const trackIDs = new Set(trackList.map((track) => track.id))
-      const withoutTracks = items.filter((item) => !trackIDs.has(item.id))
-      const currentQueueIndex = currentTrack ? withoutTracks.findIndex((item) => item.id === currentTrack.id) : -1
-      if (currentQueueIndex < 0) {
-        return [...withoutTracks, ...trackList]
-      }
-      return [...withoutTracks.slice(0, currentQueueIndex + 1), ...trackList, ...withoutTracks.slice(currentQueueIndex + 1)]
-    })
+    setQueue((items) => insertTracksAfterCurrentInQueue({ queue: items, currentTrack, tracksToInsert: trackList }))
   }
 
   function handleRemoveTrackFromPlaylist(track: Track) {
@@ -691,7 +681,7 @@ function App() {
   }
 
   function handlePlayModeToggle() {
-    setPlayMode((mode) => (mode === 'sequence' ? 'loop' : mode === 'loop' ? 'shuffle' : mode === 'shuffle' ? 'single' : 'sequence'))
+    setPlayMode(getNextPlayMode)
   }
 
   function handleRemoveQueueTrack(track: Track) {
@@ -699,27 +689,7 @@ function App() {
   }
 
   function nextQueueTrack() {
-    if (playMode === 'single') {
-      return currentTrack
-    }
-    if (!queue.length) {
-      return null
-    }
-    const index = currentTrack ? queue.findIndex((track) => track.id === currentTrack.id) : -1
-    if (playMode === 'shuffle') {
-      if (queue.length === 1) {
-        return queue[0]
-      }
-      const candidates = queue.filter((track) => track.id !== currentTrack?.id)
-      return candidates[Math.floor(Math.random() * candidates.length)] ?? null
-    }
-    if (index >= 0 && index < queue.length - 1) {
-      return queue[index + 1]
-    }
-    if (playMode === 'loop') {
-      return queue[0]
-    }
-    return null
+    return getNextQueueTrack({ queue, currentTrack, playMode })
   }
 
   function recordCurrentTrackPlay() {
@@ -750,30 +720,21 @@ function App() {
   const canSearch = view === 'songs' || view === 'libraries'
 
   return (
-    <div className={`app-shell ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+    <div className="app-shell">
       <aside className="sidebar" aria-label="主导航">
         <div className="sidebar-brand">
-          <div className="brand-mark" title="阿言">
+          <div className="brand-mark" title="聆听">
             <AudioLines size={24} strokeWidth={2.2} />
           </div>
-          {!isSidebarCollapsed && <strong>阿言</strong>}
-          <button
-            type="button"
-            className="sidebar-toggle"
-            aria-label={isSidebarCollapsed ? '展开侧边栏' : '收起侧边栏'}
-            title={isSidebarCollapsed ? '展开侧边栏' : '收起侧边栏'}
-            onClick={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
-          >
-            {isSidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-          </button>
+          <strong>聆听</strong>
         </div>
 
         <nav className="nav-list">
-          <NavItem collapsed={isSidebarCollapsed} icon={<Library size={20} />} label="媒体库" active={view === 'libraries'} onClick={() => setView('libraries')} />
-          <NavItem collapsed={isSidebarCollapsed} icon={<ListMusic size={20} />} label="歌曲管理" active={view === 'songs'} onClick={() => setView('songs')} />
-          <NavItem collapsed={isSidebarCollapsed} icon={<ListPlus size={20} />} label="歌单管理" active={view === 'playlists'} onClick={() => setView('playlists')} />
-          <NavItem collapsed={isSidebarCollapsed} icon={<Heart size={20} />} label="我喜欢" active={view === 'liked'} onClick={() => setView('liked')} />
-          <NavItem collapsed={isSidebarCollapsed} icon={<History size={20} />} label="最近播放" active={view === 'recent'} onClick={() => setView('recent')} />
+          <NavItem icon={<ListMusic size={20} />} label="歌曲" active={view === 'songs'} onClick={() => setView('songs')} />
+          <NavItem icon={<Library size={20} />} label="媒体库" active={view === 'libraries'} onClick={() => setView('libraries')} />
+          <NavItem icon={<ListPlus size={20} />} label="歌单" active={view === 'playlists'} onClick={() => setView('playlists')} />
+          <NavItem icon={<Heart size={20} />} label="我喜欢" active={view === 'liked'} onClick={() => setView('liked')} />
+          <NavItem icon={<History size={20} />} label="最近播放" active={view === 'recent'} onClick={() => setView('recent')} />
         </nav>
       </aside>
 
@@ -862,40 +823,40 @@ function App() {
           />
         ) : view === 'playlists' ? (
           <PlaylistsView
-            playlists={playlists}
-            selectedPlaylist={selectedPlaylist}
-            tracks={activePlaylistTracks}
-            playlistName={playlistName}
-            isLoading={playlistsQuery.isLoading || (selectedPlaylist !== null && playlistTracksQuery.isLoading)}
-            isError={playlistsQuery.isError || (selectedPlaylist !== null && playlistTracksQuery.isError)}
-            isCreating={createPlaylistMutation.isPending}
-            isMutating={renamePlaylistMutation.isPending || deletePlaylistMutation.isPending}
-            selectedTrack={selectedTrack}
-            currentTrack={currentTrack}
-            playbackStatus={playbackStatus}
-            selectedTrackIds={selectedTrackIds}
-            onNameChange={setPlaylistName}
-            onSubmit={handlePlaylistSubmit}
-            onSelectPlaylist={setSelectedPlaylistId}
-            onRenamePlaylist={handleRenamePlaylist}
-            onDeletePlaylist={handleDeletePlaylist}
-            onSelectTrack={handleSelectTrack}
-            onToggleTrackSelected={handleToggleTrackSelected}
-            onToggleAllTracks={handleToggleAllTracks}
-            onPlayAll={handlePlayTrackList}
-            onPlaySelected={handlePlayTrackList}
-            onPlayTrack={handlePlayTrackFromList}
-            onToggleLike={handleToggleLike}
-            onBatchLike={handleBatchLike}
-            onToggleMenu={handleToggleTrackMenu}
-            onOpenPlaylistDialog={handleOpenPlaylistDialog}
-            onOpenPlaylistDialogForTracks={handleOpenPlaylistDialogForTracks}
-            onPlayNext={handlePlayNext}
-            onPlayNextTracks={handlePlayNextTracks}
-            onRemoveTrack={handleRemoveTrackFromPlaylist}
-            onRemoveTracks={handleRemoveTracksFromPlaylist}
-            openTrackMenuId={openTrackMenuId}
-          />
+              playlists={playlists}
+              selectedPlaylist={selectedPlaylist}
+              tracks={activePlaylistTracks}
+              playlistName={playlistName}
+              isLoading={playlistsQuery.isLoading || (selectedPlaylist !== null && playlistTracksQuery.isLoading)}
+              isError={playlistsQuery.isError || (selectedPlaylist !== null && playlistTracksQuery.isError)}
+              isCreating={createPlaylistMutation.isPending}
+              isMutating={renamePlaylistMutation.isPending || deletePlaylistMutation.isPending}
+              selectedTrack={selectedTrack}
+              currentTrack={currentTrack}
+              playbackStatus={playbackStatus}
+              selectedTrackIds={selectedTrackIds}
+              onNameChange={setPlaylistName}
+              onSubmit={handlePlaylistSubmit}
+              onSelectPlaylist={setSelectedPlaylistId}
+              onRenamePlaylist={handleRenamePlaylist}
+              onDeletePlaylist={handleDeletePlaylist}
+              onSelectTrack={handleSelectTrack}
+              onToggleTrackSelected={handleToggleTrackSelected}
+              onToggleAllTracks={handleToggleAllTracks}
+              onPlayAll={handlePlayTrackList}
+              onPlaySelected={handlePlayTrackList}
+              onPlayTrack={handlePlayTrackFromList}
+              onToggleLike={handleToggleLike}
+              onBatchLike={handleBatchLike}
+              onToggleMenu={handleToggleTrackMenu}
+              onOpenPlaylistDialog={handleOpenPlaylistDialog}
+              onOpenPlaylistDialogForTracks={handleOpenPlaylistDialogForTracks}
+              onPlayNext={handlePlayNext}
+              onPlayNextTracks={handlePlayNextTracks}
+              onRemoveTrack={handleRemoveTrackFromPlaylist}
+              onRemoveTracks={handleRemoveTracksFromPlaylist}
+              openTrackMenuId={openTrackMenuId}
+            />
         ) : view === 'liked' ? (
           <SystemPlaylistView
             title="我喜欢"
@@ -1108,83 +1069,18 @@ function NavItem({
   icon,
   label,
   active,
-  collapsed,
   onClick,
 }: {
   icon: ReactNode
   label: string
   active: boolean
-  collapsed: boolean
   onClick: () => void
 }) {
   return (
     <button className={`nav-item ${active ? 'active' : ''}`} type="button" aria-label={label} title={label} onClick={onClick}>
       {icon}
-      {!collapsed && <span>{label}</span>}
+      <span>{label}</span>
     </button>
-  )
-}
-
-function QueueDrawer({
-  queue,
-  currentTrack,
-  playbackStatus,
-  playMode,
-  onClose,
-  onPlayTrack,
-  onRemoveTrack,
-}: {
-  queue: Track[]
-  currentTrack: Track | null
-  playbackStatus: PlaybackStatus
-  playMode: PlayMode
-  onClose: () => void
-  onPlayTrack: (track: Track) => void
-  onRemoveTrack: (track: Track) => void
-}) {
-  const upcoming = currentTrack ? queue.filter((track) => track.id !== currentTrack.id) : queue
-  return (
-    <aside className="queue-drawer" aria-label="播放队列">
-      <div className="queue-header">
-        <div>
-          <h2>播放队列</h2>
-          <p>{queue.length} 首 · {playModeLabel(playMode)}</p>
-        </div>
-        <button type="button" onClick={onClose} aria-label="关闭播放队列" title="关闭">
-          <X size={18} />
-        </button>
-      </div>
-
-      <section className="queue-section">
-        <span className="eyebrow">当前播放</span>
-        {currentTrack ? (
-          <button type="button" className="queue-track current" onClick={() => onPlayTrack(currentTrack)}>
-            <strong>{currentTrack.title}</strong>
-            <small>{displayArtist(currentTrack)} · {playbackLabel(playbackStatus)}</small>
-          </button>
-        ) : (
-          <p className="queue-empty">还没有选择歌曲</p>
-        )}
-      </section>
-
-      <section className="queue-section">
-        <span className="eyebrow">接下来</span>
-        <div className="queue-list">
-          {upcoming.map((track) => (
-            <div className="queue-track-row" key={track.id}>
-              <button type="button" className="queue-track" onClick={() => onPlayTrack(track)}>
-                <strong>{track.title}</strong>
-                <small>{displayArtist(track)} · {formatDuration(track.durationMs)}</small>
-              </button>
-              <button type="button" aria-label="移出队列" title="移出队列" onClick={() => onRemoveTrack(track)}>
-                <X size={15} />
-              </button>
-            </div>
-          ))}
-          {!upcoming.length && <p className="queue-empty">没有后续歌曲</p>}
-        </div>
-      </section>
-    </aside>
   )
 }
 
@@ -1346,21 +1242,42 @@ function SongsView({
   const selectedTracks = tracks.filter((track) => selectedTrackIds.includes(track.id))
   return (
     <section className="library-pane" aria-label="歌曲库">
-      <div className="now-summary">
-        <div>
-          <span className="eyebrow">正在播放</span>
-          <h2>{currentTrack?.title ?? '未选择歌曲'}</h2>
-          <p>{currentTrack ? `${displayArtist(currentTrack)} · ${displayAlbum(currentTrack)} · ${playbackLabel(playbackStatus)}` : '从歌曲列表选择一首开始播放'}</p>
-          {playerError && <em className="inline-error">{playerError}</em>}
+      <div className="hero">
+        <div className="now-summary">
+          <div className="now-copy">
+            <span className="eyebrow">正在播放</span>
+            <h2>{currentTrack?.title ?? '未选择歌曲'}</h2>
+            <p>{currentTrack ? `${displayArtist(currentTrack)} · ${displayAlbum(currentTrack)} · ${playbackLabel(playbackStatus)}` : '从歌曲列表选择一首开始播放'}</p>
+            {playerError && <em className="inline-error">{playerError}</em>}
+          </div>
+          <div className="passive-wave" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
         </div>
-        <div className="passive-wave" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-          <span />
-          <span />
-          <span />
-          <span />
+
+        <div className="status-grid" aria-label="曲库状态">
+          <div className="stat">
+            <strong>{totalTracks}</strong>
+            <span>索引歌曲</span>
+          </div>
+          <div className="stat">
+            <strong>{tracks.length}</strong>
+            <span>当前筛选</span>
+          </div>
+          <div className="stat">
+            <strong>{availableFormats.length}</strong>
+            <span>音频格式</span>
+          </div>
+          <div className="stat">
+            <strong>{selectedTrackIds.length}</strong>
+            <span>已选歌曲</span>
+          </div>
         </div>
       </div>
 
@@ -1409,7 +1326,7 @@ function SongsView({
           openTrackMenuId={openTrackMenuId}
         />
 
-        {isLoading && <StateMessage title="正在读取歌曲库" body="稍等一下，阿言正在同步本地媒体库。" />}
+        {isLoading && <StateMessage title="正在读取歌曲库" body="稍等一下，聆听正在同步本地媒体库。" />}
         {isError && <StateMessage title="歌曲加载失败" body="请确认后端服务已启动，然后刷新页面或重新扫描。" tone="error" />}
         {!isLoading && !isError && !tracks.length && (
           <StateMessage
@@ -1492,12 +1409,18 @@ function PlaylistsView({
   openTrackMenuId: number | null
 }) {
   const selectedTracks = tracks.filter((track) => selectedTrackIds.includes(track.id))
+  const totalPlaylistTracks = playlists.reduce((count, playlist) => count + playlist.trackCount, 0)
+
   return (
-    <section className="playlist-page" aria-label="歌单管理">
-      <aside className="playlist-sidebar">
-        <form className="playlist-form" onSubmit={onSubmit}>
-          <label htmlFor="playlist-name">新建歌单</label>
+    <section className="playlist-page playlist-workbench-page" aria-label="歌单管理">
+      <aside className="playlist-workbench-sidebar">
+        <form className="playlist-quick-create" onSubmit={onSubmit}>
           <div>
+            <span className="eyebrow">新建歌单</span>
+            <strong>创建听歌场景</strong>
+          </div>
+          <label htmlFor="playlist-name" className="sr-only">歌单名称</label>
+          <div className="quick-create-row">
             <input
               id="playlist-name"
               value={playlistName}
@@ -1511,14 +1434,31 @@ function PlaylistsView({
           </div>
         </form>
 
-        <div className="playlist-list">
-          {playlists.map((playlist) => (
+        <div className="playlist-sidebar-summary">
+          <div>
+            <strong>{playlists.length}</strong>
+            <span>歌单</span>
+          </div>
+          <div>
+            <strong>{totalPlaylistTracks}</strong>
+            <span>收录</span>
+          </div>
+        </div>
+
+        <div className="playlist-shelf-title">
+          <span>歌单架</span>
+          <small>{playlists.length} 个</small>
+        </div>
+
+        <div className="playlist-list workbench-playlist-list">
+          {playlists.map((playlist, index) => (
             <button
               key={playlist.id}
               type="button"
               className={`playlist-item ${selectedPlaylist?.id === playlist.id ? 'active' : ''}`}
               onClick={() => onSelectPlaylist(playlist.id)}
             >
+              <i aria-hidden="true">{String(index + 1).padStart(2, '0')}</i>
               <span>
                 <strong>{playlist.name}</strong>
                 <small>{playlist.trackCount} 首歌曲</small>
@@ -1527,17 +1467,22 @@ function PlaylistsView({
           ))}
         </div>
 
-        {!playlists.length && !isLoading && <StateMessage title="还没有普通歌单" body="创建一个歌单后，可以从歌曲行菜单添加歌曲。" />}
+        {!playlists.length && !isLoading && <StateMessage title="还没有普通歌单" body="输入名称创建第一个听歌场景。" />}
       </aside>
 
-      <div className="playlist-detail">
-        <div className="table-header">
+      <div className="playlist-detail playlist-workbench-detail">
+        <div className="playlist-workbench-status">
+          <span>正在整理</span>
+          <strong>{selectedTrackIds.length ? `已选 ${selectedTrackIds.length} 首` : '未选择歌曲'}</strong>
+        </div>
+
+        <div className="playlist-detail-heading">
           <div>
             <h3>{selectedPlaylist?.name ?? '选择一个歌单'}</h3>
-            <span>{selectedPlaylist ? `${selectedPlaylist.trackCount} 首歌曲 · 按添加时间排序` : '普通歌单不会包含我喜欢和最近播放'}</span>
+            <p>{selectedPlaylist ? `${selectedPlaylist.trackCount} 首歌曲 · 按添加时间排序` : '普通歌单不会包含我喜欢和最近播放'}</p>
           </div>
           {selectedPlaylist && (
-            <div className="row-actions">
+            <div className="row-actions playlist-actions">
               <button type="button" onClick={() => onRenamePlaylist(selectedPlaylist)} disabled={isMutating} title="重命名" aria-label="重命名">
                 <RefreshCw size={15} />
               </button>
@@ -1579,12 +1524,662 @@ function PlaylistsView({
           openTrackMenuId={openTrackMenuId}
         />
 
-        {isLoading && <StateMessage title="正在读取歌单" body="稍等一下，阿言正在同步歌单数据。" />}
+        {isLoading && <StateMessage title="正在读取歌单" body="稍等一下，聆听正在同步歌单数据。" />}
         {isError && <StateMessage title="歌单加载失败" body="请确认后端服务已启动，然后刷新页面。" tone="error" />}
         {selectedPlaylist && !isLoading && !isError && !tracks.length && <StateMessage title="这个歌单还是空的" body="从歌曲列表的三点菜单中添加歌曲到歌单。" />}
       </div>
     </section>
   )
+}
+
+const listPrototypeVariants = [
+  { key: 'A', name: '密集控制台' },
+  { key: 'B', name: '唱片货架' },
+  { key: 'C', name: '分组看板' },
+] as const
+
+type ListPrototypeVariant = (typeof listPrototypeVariants)[number]['key']
+
+const prototypeSampleTracks: Track[] = [
+  { id: -101, title: 'Midnight Local', artist: 'Paper Trails', album: 'Room Tapes', durationMs: 214000, format: 'mp3', path: '/prototype/midnight-local.mp3', liked: true },
+  { id: -102, title: '雨后的窗口', artist: '林间电台', album: '城市慢放', durationMs: 187000, format: 'flac', path: '/prototype/rain-window.flac', liked: false },
+  { id: -103, title: 'Northbound', artist: 'Small Hours', album: 'Train Notes', durationMs: 256000, format: 'wav', path: '/prototype/northbound.wav', liked: true },
+  { id: -104, title: 'Soft Terminal', artist: 'Ari Chen', album: 'Late Work', durationMs: 198000, format: 'm4a', path: '/prototype/soft-terminal.m4a', liked: false },
+]
+
+const prototypeSamplePlaylists: Playlist[] = [
+  { id: -201, name: '夜间散步', type: 'normal', trackCount: 24, createdAt: '2026-05-10 09:00', updatedAt: '2026-05-10 09:00' },
+  { id: -202, name: '专注写作', type: 'normal', trackCount: 41, createdAt: '2026-05-10 09:00', updatedAt: '2026-05-10 09:00' },
+  { id: -203, name: '周末整理', type: 'normal', trackCount: 16, createdAt: '2026-05-10 09:00', updatedAt: '2026-05-10 09:00' },
+]
+
+const prototypeSampleLibraries: LibraryItem[] = [
+  {
+    id: -301,
+    path: '/Users/me/Music',
+    musicCount: 284,
+    createdAt: '2026-05-10 09:00',
+    updatedAt: '2026-05-10 09:30',
+    scan: { id: -401, libraryId: -301, status: 'completed', scannedFiles: 284, totalFiles: 284, message: '', completedAt: '2026-05-10 09:30' },
+  },
+  {
+    id: -302,
+    path: '/Volumes/Archive/Audio',
+    musicCount: 1120,
+    createdAt: '2026-05-10 09:00',
+    updatedAt: '2026-05-10 09:12',
+    scan: { id: -402, libraryId: -302, status: 'running', scannedFiles: 438, totalFiles: 1120, message: '正在扫描专辑目录', completedAt: '' },
+  },
+]
+
+function ListsPrototypeView({
+  tracks,
+  libraries,
+  playlists,
+  queue,
+  selectedPlaylist,
+  selectedTrack,
+  currentTrack,
+  selectedTrackIds,
+}: {
+  tracks: Track[]
+  libraries: LibraryItem[]
+  playlists: Playlist[]
+  queue: Track[]
+  selectedPlaylist: Playlist | null
+  selectedTrack: Track | null
+  currentTrack: Track | null
+  selectedTrackIds: number[]
+}) {
+  // PROTOTYPE — Three variants for every list surface in 聆听, switchable via ?prototype=lists&variant=.
+  const [variant, setVariant] = useState<ListPrototypeVariant>(() => readListPrototypeVariant())
+  const displayTracks = tracks.length ? tracks : prototypeSampleTracks
+  const displayPlaylists = playlists.length ? playlists : prototypeSamplePlaylists
+  const displayLibraries = libraries.length ? libraries : prototypeSampleLibraries
+  const displayQueue = queue.length ? queue : displayTracks.slice(0, 3)
+  const totalDuration = displayTracks.reduce((sum, track) => sum + track.durationMs, 0)
+  const variantMeta = listPrototypeVariants.find((item) => item.key === variant) ?? listPrototypeVariants[0]
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      if (target?.closest('input, textarea, [contenteditable="true"]')) return
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault()
+        setVariant((current) => updateListPrototypeVariant(current, -1))
+      }
+      if (event.key === 'ArrowRight') {
+        event.preventDefault()
+        setVariant((current) => updateListPrototypeVariant(current, 1))
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    params.set('prototype', 'lists')
+    params.set('variant', variant)
+    window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`)
+  }, [variant])
+
+  const state = {
+    variant,
+    tracks: displayTracks.length,
+    playlists: displayPlaylists.length,
+    libraries: displayLibraries.length,
+    queue: displayQueue.length,
+    selectedTrackIds: selectedTrackIds.length,
+    selectedPlaylist: selectedPlaylist?.name ?? displayPlaylists[0]?.name ?? null,
+    selectedTrack: selectedTrack?.title ?? null,
+    currentTrack: currentTrack?.title ?? null,
+  }
+
+  return (
+    <section className="lists-prototype-shell" aria-label="列表展示原型">
+      <div className="prototype-note">
+        PROTOTYPE — 设计项目中涉及到的列表展示。三种结构方案通过 <code>?prototype=lists&amp;variant=</code> 切换；使用真实数据，不足时用样例数据补位。
+      </div>
+      {variant === 'A' ? (
+        <ListVariantCommand tracks={displayTracks} playlists={displayPlaylists} libraries={displayLibraries} queue={displayQueue} state={state} />
+      ) : variant === 'B' ? (
+        <ListVariantShelf tracks={displayTracks} playlists={displayPlaylists} libraries={displayLibraries} queue={displayQueue} totalDuration={totalDuration} state={state} />
+      ) : (
+        <ListVariantBoard tracks={displayTracks} playlists={displayPlaylists} libraries={displayLibraries} queue={displayQueue} state={state} />
+      )}
+      <ListsPrototypeSwitcher
+        variants={listPrototypeVariants}
+        current={variantMeta}
+        onPrevious={() => setVariant((current) => updateListPrototypeVariant(current, -1))}
+        onNext={() => setVariant((current) => updateListPrototypeVariant(current, 1))}
+      />
+    </section>
+  )
+}
+
+function ListVariantCommand({
+  tracks,
+  playlists,
+  libraries,
+  queue,
+  state,
+}: {
+  tracks: Track[]
+  playlists: Playlist[]
+  libraries: LibraryItem[]
+  queue: Track[]
+  state: Record<string, unknown>
+}) {
+  return (
+    <div className="lists-prototype variant-command">
+      <header className="list-prototype-hero compact">
+        <div>
+          <span className="eyebrow">Variant A · Dense Command</span>
+          <h2>用一个高密度工作台承载所有列表。</h2>
+          <p>适合桌面端批量操作：歌曲是主表，歌单、媒体库、队列作为右侧可快速扫读的状态列表。</p>
+        </div>
+        <div className="list-metrics">
+          <div><strong>{tracks.length}</strong><span>歌曲</span></div>
+          <div><strong>{playlists.length}</strong><span>歌单</span></div>
+          <div><strong>{libraries.length}</strong><span>媒体库</span></div>
+          <div><strong>{queue.length}</strong><span>队列</span></div>
+        </div>
+      </header>
+      <div className="command-layout">
+        <section className="prototype-table-card">
+          <div className="prototype-section-head"><h3>歌曲列表</h3><span>键盘优先 · 可批量选择</span></div>
+          <div className="prototype-dense-table refined">
+            {tracks.slice(0, 9).map((track, index) => {
+              const artistMissing = !track.artist.trim()
+              const albumMissing = !track.album.trim()
+              return (
+                <div className="prototype-dense-row refined" key={track.id}>
+                  <span className="row-number">{String(index + 1).padStart(2, '0')}</span>
+                  <div className="track-main-cell" title={`${track.title} · ${track.path}`}>
+                    <strong>{track.title}</strong>
+                    <small>{compactPath(track.path)}</small>
+                  </div>
+                  <div className={`field-cell ${artistMissing ? 'is-empty' : ''}`}>
+                    <span>艺术家</span>
+                    <strong>{artistMissing ? '未识别艺术家' : displayArtist(track)}</strong>
+                  </div>
+                  <div className={`field-cell ${albumMissing ? 'is-empty' : ''}`}>
+                    <span>专辑</span>
+                    <strong>{albumMissing ? '未识别专辑' : displayAlbum(track)}</strong>
+                  </div>
+                  <span className="duration-pill">{formatDuration(track.durationMs)}</span>
+                  <i className="format-pill">{track.format}</i>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+        <aside className="command-side-lists">
+          <PrototypeMiniList title="歌单" items={playlists.map((playlist) => [playlist.name, `${playlist.trackCount} 首 · 普通歌单`])} />
+          <PrototypeMiniList title="媒体库" items={libraries.map((library) => [compactPath(library.path), `${library.musicCount} 首 · ${statusLabel(library.scan.status)}`])} />
+          <PrototypeMiniList title="播放队列" items={queue.map((track) => [track.title, `${displayArtist(track)} · ${formatDuration(track.durationMs)}`])} />
+          <PrototypeState state={state} />
+        </aside>
+      </div>
+    </div>
+  )
+}
+
+function ListVariantShelf({
+  tracks,
+  playlists,
+  libraries,
+  queue,
+  totalDuration,
+  state,
+}: {
+  tracks: Track[]
+  playlists: Playlist[]
+  libraries: LibraryItem[]
+  queue: Track[]
+  totalDuration: number
+  state: Record<string, unknown>
+}) {
+  return (
+    <div className="lists-prototype variant-shelf">
+      <header className="list-prototype-hero shelf">
+        <div>
+          <span className="eyebrow">Variant B · Shelf</span>
+          <h2>把列表变成“唱片货架”，强调浏览和发现。</h2>
+          <p>歌曲、歌单、媒体库不再都像表格；主信息用大卡片，次级信息用横向轨道。</p>
+        </div>
+        <div className="shelf-duration"><strong>{formatDuration(totalDuration)}</strong><span>当前列表总时长</span></div>
+      </header>
+      <section className="record-shelf">
+        {tracks.slice(0, 6).map((track, index) => (
+          <article className="track-record-card" key={track.id}>
+            <div className={`record-art tone-${(index % 4) + 1}`}><AudioLines size={22} /></div>
+            <strong>{track.title}</strong>
+            <span>{displayArtist(track)}</span>
+            <small>{displayAlbum(track)} · {formatDuration(track.durationMs)}</small>
+          </article>
+        ))}
+      </section>
+      <div className="shelf-rails">
+        <PrototypeRail title="歌单轨道" items={playlists.map((playlist) => ({ title: playlist.name, meta: `${playlist.trackCount} 首歌曲` }))} />
+        <PrototypeRail title="媒体库轨道" items={libraries.map((library) => ({ title: library.path, meta: `${library.musicCount} 首 · ${statusLabel(library.scan.status)}` }))} />
+        <PrototypeRail title="队列轨道" items={queue.map((track) => ({ title: track.title, meta: displayArtist(track) }))} />
+      </div>
+      <PrototypeState state={state} />
+    </div>
+  )
+}
+
+function ListVariantBoard({
+  tracks,
+  playlists,
+  libraries,
+  queue,
+  state,
+}: {
+  tracks: Track[]
+  playlists: Playlist[]
+  libraries: LibraryItem[]
+  queue: Track[]
+  state: Record<string, unknown>
+}) {
+  const liked = tracks.filter((track) => track.liked)
+  const lossless = tracks.filter((track) => track.format.toLowerCase() !== 'mp3')
+  return (
+    <div className="lists-prototype variant-board">
+      <header className="list-prototype-hero board">
+        <div>
+          <span className="eyebrow">Variant C · Board</span>
+          <h2>按任务分组：现在听什么、正在整理什么、哪些源需要注意。</h2>
+          <p>适合成熟产品方向：列表不只是容器，而是提醒用户下一步行动的看板。</p>
+        </div>
+      </header>
+      <div className="board-columns">
+        <PrototypeBoardColumn title="接下来播放" tone="mint" rows={queue.map((track) => [track.title, `${displayArtist(track)} · ${formatDuration(track.durationMs)}`])} />
+        <PrototypeBoardColumn title="我喜欢" tone="coral" rows={(liked.length ? liked : tracks.slice(0, 3)).map((track) => [track.title, displayArtist(track)])} />
+        <PrototypeBoardColumn title="高品质音源" tone="blue" rows={(lossless.length ? lossless : tracks.slice(0, 3)).map((track) => [track.title, `${track.format.toUpperCase()} · ${displayAlbum(track)}`])} />
+        <PrototypeBoardColumn title="歌单场景" tone="gold" rows={playlists.map((playlist) => [playlist.name, `${playlist.trackCount} 首`])} />
+        <PrototypeBoardColumn title="媒体库健康" tone="pine" rows={libraries.map((library) => [library.path, `${library.musicCount} 首 · ${statusLabel(library.scan.status)}`])} />
+      </div>
+      <PrototypeState state={state} />
+    </div>
+  )
+}
+
+function compactPath(path: string) {
+  const normalized = path.replace(/\\/g, '/')
+  const parts = normalized.split('/').filter(Boolean)
+  if (parts.length <= 2) {
+    return normalized || '未记录路径'
+  }
+  return `…/${parts.slice(-2).join('/')}`
+}
+
+function PrototypeMiniList({ title, items }: { title: string; items: string[][] }) {
+  return (
+    <section className="prototype-mini-list">
+      <div className="prototype-section-head"><h3>{title}</h3><span>{items.length}</span></div>
+      {items.slice(0, 5).map(([primary, secondary]) => (
+        <div className="prototype-mini-row" key={`${title}-${primary}`}>
+          <strong>{primary}</strong>
+          <small>{secondary}</small>
+        </div>
+      ))}
+    </section>
+  )
+}
+
+function PrototypeRail({ title, items }: { title: string; items: { title: string; meta: string }[] }) {
+  return (
+    <section className="prototype-rail">
+      <div className="prototype-section-head"><h3>{title}</h3><span>{items.length}</span></div>
+      <div>
+        {items.slice(0, 8).map((item) => (
+          <article key={`${title}-${item.title}`}>
+            <strong>{item.title}</strong>
+            <small>{item.meta}</small>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function PrototypeBoardColumn({ title, tone, rows }: { title: string; tone: string; rows: string[][] }) {
+  return (
+    <section className={`board-column ${tone}`}>
+      <h3>{title}</h3>
+      {rows.slice(0, 6).map(([primary, secondary]) => (
+        <article key={`${title}-${primary}`}>
+          <strong>{primary}</strong>
+          <small>{secondary}</small>
+        </article>
+      ))}
+    </section>
+  )
+}
+
+function PrototypeState({ state }: { state: Record<string, unknown> }) {
+  return (
+    <pre className="prototype-state" aria-label="原型状态">
+      {JSON.stringify(state, null, 2)}
+    </pre>
+  )
+}
+
+function ListsPrototypeSwitcher({
+  variants,
+  current,
+  onPrevious,
+  onNext,
+}: {
+  variants: readonly { key: ListPrototypeVariant; name: string }[]
+  current: { key: ListPrototypeVariant; name: string }
+  onPrevious: () => void
+  onNext: () => void
+}) {
+  if (import.meta.env.PROD) return null
+  return (
+    <div className="prototype-switcher" aria-label="列表原型变体切换器">
+      <button type="button" onClick={onPrevious} aria-label="上一个变体">←</button>
+      <strong>{current.key} — {current.name}</strong>
+      <button type="button" onClick={onNext} aria-label="下一个变体">→</button>
+      <span>{variants.length} variants</span>
+    </div>
+  )
+}
+
+function readListPrototypeVariant(): ListPrototypeVariant {
+  const value = new URLSearchParams(window.location.search).get('variant')
+  return listPrototypeVariants.some((item) => item.key === value) ? (value as ListPrototypeVariant) : 'A'
+}
+
+function updateListPrototypeVariant(current: ListPrototypeVariant, offset: number): ListPrototypeVariant {
+  const index = listPrototypeVariants.findIndex((item) => item.key === current)
+  const nextIndex = (index + offset + listPrototypeVariants.length) % listPrototypeVariants.length
+  return listPrototypeVariants[nextIndex].key
+}
+
+const playlistPrototypeVariants = [
+  { key: 'A', name: '唱片卡片墙' },
+  { key: 'B', name: '编辑工作台' },
+  { key: 'C', name: '情绪地图' },
+] as const
+
+type PlaylistPrototypeVariant = (typeof playlistPrototypeVariants)[number]['key']
+
+function PlaylistsPrototypeView({
+  playlists,
+  selectedPlaylist,
+  tracks,
+  selectedTrackIds,
+  onSelectPlaylist,
+}: {
+  playlists: Playlist[]
+  selectedPlaylist: Playlist | null
+  tracks: Track[]
+  selectedTrackIds: number[]
+  onSelectPlaylist: (id: number) => void
+}) {
+  const [variant, setVariant] = useState<PlaylistPrototypeVariant>(() => readPlaylistPrototypeVariant())
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      if (target?.closest('input, textarea, [contenteditable="true"]')) {
+        return
+      }
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault()
+        setVariant((current) => updatePlaylistPrototypeVariant(current, -1))
+      }
+      if (event.key === 'ArrowRight') {
+        event.preventDefault()
+        setVariant((current) => updatePlaylistPrototypeVariant(current, 1))
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    params.set('prototype', 'playlist')
+    params.set('variant', variant)
+    window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`)
+  }, [variant])
+
+  const selected = selectedPlaylist ?? playlists[0] ?? null
+  const totalTracks = playlists.reduce((count, playlist) => count + playlist.trackCount, 0)
+  const variantMeta = playlistPrototypeVariants.find((item) => item.key === variant) ?? playlistPrototypeVariants[0]
+
+  return (
+    <section className="playlist-prototype-shell" aria-label="歌单管理原型">
+      <div className="prototype-note">
+        PROTOTYPE — Three playlist-management UI variants, switchable via <code>?prototype=playlist&amp;variant=</code>. Throw away after choosing a direction.
+      </div>
+      {variant === 'A' ? (
+        <PlaylistVariantCatalog playlists={playlists} selectedPlaylist={selected} tracks={tracks} totalTracks={totalTracks} onSelectPlaylist={onSelectPlaylist} />
+      ) : variant === 'B' ? (
+        <PlaylistVariantWorkbench playlists={playlists} selectedPlaylist={selected} tracks={tracks} selectedTrackIds={selectedTrackIds} onSelectPlaylist={onSelectPlaylist} />
+      ) : (
+        <PlaylistVariantMoodMap playlists={playlists} selectedPlaylist={selected} tracks={tracks} totalTracks={totalTracks} onSelectPlaylist={onSelectPlaylist} />
+      )}
+      <PrototypeSwitcher
+        variants={playlistPrototypeVariants}
+        current={variantMeta}
+        onPrevious={() => setVariant((current) => updatePlaylistPrototypeVariant(current, -1))}
+        onNext={() => setVariant((current) => updatePlaylistPrototypeVariant(current, 1))}
+      />
+    </section>
+  )
+}
+
+function PlaylistVariantCatalog({
+  playlists,
+  selectedPlaylist,
+  tracks,
+  totalTracks,
+  onSelectPlaylist,
+}: {
+  playlists: Playlist[]
+  selectedPlaylist: Playlist | null
+  tracks: Track[]
+  totalTracks: number
+  onSelectPlaylist: (id: number) => void
+}) {
+  return (
+    <div className="playlist-prototype variant-catalog">
+      <section className="catalog-stage">
+        <div>
+          <span className="eyebrow">Variant A · Catalog</span>
+          <h2>先看到歌单集合，再进入单个歌单。</h2>
+          <p>新建歌单是一张空白唱片卡。歌单名只在卡片和明细标题出现，避免重复堆叠。</p>
+        </div>
+        <div className="catalog-stats">
+          <div><strong>{playlists.length}</strong><span>歌单</span></div>
+          <div><strong>{totalTracks}</strong><span>累计收录</span></div>
+          <div><strong>{tracks.length}</strong><span>当前明细</span></div>
+        </div>
+      </section>
+      <section className="catalog-grid">
+        {playlists.map((playlist, index) => (
+          <button key={playlist.id} type="button" className={`record-card ${selectedPlaylist?.id === playlist.id ? 'active' : ''}`} onClick={() => onSelectPlaylist(playlist.id)}>
+            <span className="record-index">{String(index + 1).padStart(2, '0')}</span>
+            <strong>{playlist.name}</strong>
+            <small>{playlist.trackCount} 首歌曲</small>
+          </button>
+        ))}
+        <button type="button" className="record-card create-card">
+          <span>+</span>
+          <strong>新建歌单</strong>
+          <small>点击后再命名</small>
+        </button>
+      </section>
+      <PlaylistPrototypeTrackPanel selectedPlaylist={selectedPlaylist} tracks={tracks} />
+    </div>
+  )
+}
+
+function PlaylistVariantWorkbench({
+  playlists,
+  selectedPlaylist,
+  tracks,
+  selectedTrackIds,
+  onSelectPlaylist,
+}: {
+  playlists: Playlist[]
+  selectedPlaylist: Playlist | null
+  tracks: Track[]
+  selectedTrackIds: number[]
+  onSelectPlaylist: (id: number) => void
+}) {
+  return (
+    <div className="playlist-prototype variant-workbench">
+      <aside className="workbench-stack">
+        <div className="workbench-create workbench-create-redesign">
+          <span className="eyebrow">Create Playlist</span>
+          <div className="create-orbit" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </div>
+          <h2>新建一个听歌场景</h2>
+          <p>先选择场景气质，再命名。入口像一张待刻录唱片，而不是固定表单。</p>
+          <div className="create-mood-chips" aria-label="场景建议">
+            <button type="button">夜间</button>
+            <button type="button">工作</button>
+            <button type="button">旅行</button>
+          </div>
+          <button className="create-main-action" type="button"><Plus size={16} /> 开始创建</button>
+        </div>
+        <div className="compact-playlists">
+          {playlists.map((playlist) => (
+            <button key={playlist.id} type="button" className={selectedPlaylist?.id === playlist.id ? 'active' : ''} onClick={() => onSelectPlaylist(playlist.id)}>
+              <strong>{playlist.name}</strong>
+              <span>{playlist.trackCount} 首</span>
+            </button>
+          ))}
+        </div>
+      </aside>
+      <main className="editing-desk editing-desk-simplified">
+        <div className="desk-status-line">
+          <span>Variant B refinement</span>
+          <strong>{selectedTrackIds.length ? `已选择 ${selectedTrackIds.length} 首` : '未选择歌曲'}</strong>
+        </div>
+        <PlaylistPrototypeTrackPanel selectedPlaylist={selectedPlaylist} tracks={tracks} compact />
+      </main>
+    </div>
+  )
+}
+
+function PlaylistVariantMoodMap({
+  playlists,
+  selectedPlaylist,
+  tracks,
+  totalTracks,
+  onSelectPlaylist,
+}: {
+  playlists: Playlist[]
+  selectedPlaylist: Playlist | null
+  tracks: Track[]
+  totalTracks: number
+  onSelectPlaylist: (id: number) => void
+}) {
+  return (
+    <div className="playlist-prototype variant-moodmap">
+      <section className="mood-map">
+        <div className="map-copy">
+          <span className="eyebrow">Variant C · Mood Map</span>
+          <h2>按情绪和场景管理，而不是按列表管理。</h2>
+          <p>适合 v0.6 成熟产品方向：歌单是场景入口，位置、尺度和颜色表达使用频率与情绪属性。</p>
+        </div>
+        {playlists.map((playlist, index) => (
+          <button
+            key={playlist.id}
+            type="button"
+            className={`mood-node node-${(index % 5) + 1} ${selectedPlaylist?.id === playlist.id ? 'active' : ''}`}
+            onClick={() => onSelectPlaylist(playlist.id)}
+          >
+            <strong>{playlist.name}</strong>
+            <span>{playlist.trackCount} 首</span>
+          </button>
+        ))}
+        <button type="button" className="mood-node node-create">+ 新场景</button>
+        <div className="map-state"><strong>{totalTracks}</strong><span>首歌曲被放入这些场景</span></div>
+      </section>
+      <PlaylistPrototypeTrackPanel selectedPlaylist={selectedPlaylist} tracks={tracks} />
+    </div>
+  )
+}
+
+function PlaylistPrototypeTrackPanel({ selectedPlaylist, tracks, compact = false }: { selectedPlaylist: Playlist | null; tracks: Track[]; compact?: boolean }) {
+  return (
+    <section className={`prototype-track-panel ${compact ? 'compact' : ''}`}> 
+      <div className="prototype-track-head">
+        <div>
+          <span className="eyebrow">Selected</span>
+          <h3>{selectedPlaylist?.name ?? '选择一个歌单'}</h3>
+          <p>{selectedPlaylist ? `${selectedPlaylist.trackCount} 首歌曲 · 这里只保留一次上下文标题` : '选择歌单后显示明细'}</p>
+        </div>
+        <div className="prototype-actions">
+          <button type="button"><Play size={14} fill="currentColor" /> 播放</button>
+          <button type="button">添加</button>
+          <button type="button">整理</button>
+        </div>
+      </div>
+      <div className="prototype-track-list">
+        {tracks.slice(0, 6).map((track) => (
+          <div key={track.id} className="prototype-track-row">
+            <span className="prototype-play-dot"><Play size={12} fill="currentColor" /></span>
+            <div>
+              <strong>{track.title}</strong>
+              <small>{displayArtist(track)} · {displayAlbum(track)}</small>
+            </div>
+            <span>{formatDuration(track.durationMs)}</span>
+            <span className="format-chip">{track.format}</span>
+          </div>
+        ))}
+        {!tracks.length && <StateMessage title="这个歌单还是空的" body="原型状态：这里会承载添加歌曲、拖拽排序和批量整理。" />}
+      </div>
+    </section>
+  )
+}
+
+function PrototypeSwitcher({
+  variants,
+  current,
+  onPrevious,
+  onNext,
+}: {
+  variants: readonly { key: PlaylistPrototypeVariant; name: string }[]
+  current: { key: PlaylistPrototypeVariant; name: string }
+  onPrevious: () => void
+  onNext: () => void
+}) {
+  if (import.meta.env.PROD) {
+    return null
+  }
+  return (
+    <div className="prototype-switcher" aria-label="原型变体切换器">
+      <button type="button" onClick={onPrevious} aria-label="上一个变体">←</button>
+      <strong>{current.key} — {current.name}</strong>
+      <button type="button" onClick={onNext} aria-label="下一个变体">→</button>
+      <span>{variants.length} variants</span>
+    </div>
+  )
+}
+
+function readPlaylistPrototypeVariant(): PlaylistPrototypeVariant {
+  const value = new URLSearchParams(window.location.search).get('variant')
+  return playlistPrototypeVariants.some((item) => item.key === value) ? (value as PlaylistPrototypeVariant) : 'A'
+}
+
+function updatePlaylistPrototypeVariant(current: PlaylistPrototypeVariant, offset: number): PlaylistPrototypeVariant {
+  const index = playlistPrototypeVariants.findIndex((item) => item.key === current)
+  const nextIndex = (index + offset + playlistPrototypeVariants.length) % playlistPrototypeVariants.length
+  return playlistPrototypeVariants[nextIndex].key
 }
 
 function SystemPlaylistView({
@@ -1694,7 +2289,7 @@ function SystemPlaylistView({
           onPlayNext={onPlayNext}
           openTrackMenuId={openTrackMenuId}
         />
-        {isLoading && <StateMessage title="正在读取歌曲" body="稍等一下，阿言正在同步系统歌单。" />}
+        {isLoading && <StateMessage title="正在读取歌曲" body="稍等一下，聆听正在同步系统歌单。" />}
         {isError && <StateMessage title="系统歌单加载失败" body="请确认后端服务已启动，然后刷新页面。" tone="error" />}
         {!isLoading && !isError && !tracks.length && <StateMessage title={emptyTitle} body={emptyBody} />}
       </div>
@@ -1851,6 +2446,17 @@ function PlaylistTrackTable({
   return (
     <div className="table-scroll">
       <table className="track-table">
+        <colgroup>
+          <col className="track-col-select" />
+          <col className="track-col-play" />
+          <col className="track-col-title" />
+          <col className="track-col-like" />
+          <col className="track-col-more" />
+          <col className="track-col-artist" />
+          <col className="track-col-album" />
+          <col className="track-col-duration" />
+          <col className="track-col-format" />
+        </colgroup>
         <thead>
           <tr>
             <th>
@@ -1861,15 +2467,14 @@ function PlaylistTrackTable({
                 aria-label="选择当前列表全部歌曲"
               />
             </th>
-            <th>播放</th>
+            <th aria-label="播放"></th>
             <th>标题</th>
+            <th aria-label="收藏"></th>
+            <th aria-label="更多"></th>
             <th>艺术家</th>
             <th>专辑</th>
             <th>时长</th>
             <th>格式</th>
-            <th>路径</th>
-            <th>收藏</th>
-            <th>更多</th>
           </tr>
         </thead>
         <tbody>
@@ -1903,19 +2508,12 @@ function PlaylistTrackTable({
                   <Play size={15} fill="currentColor" />
                 </button>
               </td>
-              <td>
+              <td className="track-title-cell" title={track.title}>
                 <button type="button" className="track-title">
                   {track.title}
                 </button>
               </td>
-              <td className={!track.artist ? 'muted-cell' : undefined}>{displayArtist(track)}</td>
-              <td className={!track.album ? 'muted-cell' : undefined}>{displayAlbum(track)}</td>
-              <td>{formatDuration(track.durationMs)}</td>
-              <td>
-                <span className="format-chip">{track.format}</span>
-              </td>
-              <td className="path-cell">{track.path}</td>
-              <td>
+              <td className="track-action-cell">
                 <button
                   type="button"
                   className={`row-icon-button like-row-button ${track.liked ? 'liked' : ''}`}
@@ -1929,7 +2527,7 @@ function PlaylistTrackTable({
                   <Heart size={15} fill={track.liked ? 'currentColor' : 'none'} />
                 </button>
               </td>
-              <td className="track-menu-cell">
+              <td className="track-menu-cell track-action-cell">
                 <button
                   type="button"
                   className="row-icon-button"
@@ -1950,6 +2548,15 @@ function PlaylistTrackTable({
                     <button type="button" onClick={() => onPlayNext(track)}>
                       下一首播放
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard?.writeText(track.path)
+                        onToggleMenu(track)
+                      }}
+                    >
+                      复制路径
+                    </button>
                     {onRemoveTrack && (
                       <button type="button" onClick={() => onRemoveTrack(track)}>
                         移出歌单
@@ -1957,6 +2564,12 @@ function PlaylistTrackTable({
                     )}
                   </div>
                 )}
+              </td>
+              <td className={`artist-cell soft-text-cell ${!track.artist ? 'muted-cell' : ''}`} title={displayArtist(track)}>{displayArtist(track)}</td>
+              <td className={`album-cell soft-text-cell ${!track.album ? 'muted-cell' : ''}`} title={displayAlbum(track)}>{displayAlbum(track)}</td>
+              <td className="duration-cell"><span>{formatDuration(track.durationMs)}</span></td>
+              <td className="format-cell">
+                <span className="format-chip">{track.format}</span>
               </td>
             </tr>
           ))}
@@ -2046,10 +2659,10 @@ function LibrariesView({
           </table>
         </div>
 
-        {isLoading && <StateMessage title="正在读取媒体库" body="稍等一下，阿言正在同步媒体库目录。" />}
+        {isLoading && <StateMessage title="正在读取媒体库" body="稍等一下，聆听正在同步媒体库目录。" />}
         {isError && <StateMessage title="媒体库加载失败" body="请确认后端服务已启动，然后刷新页面。" tone="error" />}
         {!isLoading && !isError && !libraries.length && (
-          <StateMessage title="还没有媒体库" body="添加一个音乐目录后，阿言会自动开始第一次扫描。" />
+          <StateMessage title="还没有媒体库" body="添加一个音乐目录后，聆听会自动开始第一次扫描。" />
         )}
       </div>
     </section>
@@ -2148,70 +2761,14 @@ function statusLabel(status: ScanStatus) {
   }
 }
 
-function formatDuration(durationMs: number) {
-  if (!durationMs) {
-    return '未知'
-  }
-  const totalSeconds = Math.floor(durationMs / 1000)
-  return formatDurationSeconds(totalSeconds)
-}
-
-function formatDurationSeconds(secondsValue: number) {
-  if (!secondsValue || !Number.isFinite(secondsValue)) {
-    return '0:00'
-  }
-  const totalSeconds = Math.floor(secondsValue)
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`
-}
-
-function displayArtist(track: Track) {
-  return track.artist?.trim() || '未知艺术家'
-}
-
-function displayAlbum(track: Track) {
-  return track.album?.trim() || '未知专辑'
-}
-
-function playbackLabel(status: PlaybackStatus) {
-  switch (status) {
-    case 'loading':
-      return '加载中'
-    case 'playing':
-      return '播放中'
-    case 'paused':
-      return '已暂停'
-    case 'ended':
-      return '播放结束'
-    case 'error':
-      return '播放失败'
-    case 'idle':
-      return '待播放'
-  }
-}
-
-function playModeLabel(mode: PlayMode) {
-  switch (mode) {
-    case 'sequence':
-      return '顺序播放'
-    case 'loop':
-      return '列表循环'
-    case 'shuffle':
-      return '随机播放'
-    case 'single':
-      return '单曲循环'
-  }
-}
-
 function viewTitle(view: ViewMode) {
   switch (view) {
     case 'libraries':
       return '媒体库'
     case 'songs':
-      return '歌曲管理'
+      return '歌曲'
     case 'playlists':
-      return '歌单管理'
+      return '歌单'
     case 'liked':
       return '我喜欢'
     case 'recent':
@@ -2235,64 +2792,6 @@ function trackRowClass(track: Track, selectedTrack: Track | null, currentTrack: 
 
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
-}
-
-function sortTracks(tracks: Track[], field: TrackSortField) {
-  return [...tracks].sort((a, b) => {
-    if (field === 'duration') {
-      return a.durationMs - b.durationMs || compareText(a.title, b.title)
-    }
-    return compareText(trackSortValue(a, field), trackSortValue(b, field)) || compareText(a.title, b.title)
-  })
-}
-
-function trackSortValue(track: Track, field: TrackSortField) {
-  switch (field) {
-    case 'title':
-      return track.title
-    case 'artist':
-      return displayArtist(track)
-    case 'album':
-      return displayAlbum(track)
-    case 'format':
-      return track.format
-    case 'duration':
-      return String(track.durationMs)
-  }
-}
-
-function compareText(a: string, b: string) {
-  return a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base', numeric: true })
-}
-
-function readStoredPlayerState(): StoredPlayerState {
-  try {
-    const raw = window.localStorage.getItem(playerStorageKey)
-    if (!raw) {
-      return {}
-    }
-    const parsed = JSON.parse(raw) as StoredPlayerState
-    return {
-      volume: typeof parsed.volume === 'number' ? clampVolume(parsed.volume) : undefined,
-      playMode: isPlayMode(parsed.playMode) ? parsed.playMode : undefined,
-      queueTrackIds: Array.isArray(parsed.queueTrackIds) ? parsed.queueTrackIds.filter((id) => typeof id === 'number') : undefined,
-      currentTrackId: typeof parsed.currentTrackId === 'number' ? parsed.currentTrackId : null,
-    }
-  } catch {
-    return {}
-  }
-}
-
-function writeStoredPlayerState(state: StoredPlayerState) {
-  window.localStorage.setItem(playerStorageKey, JSON.stringify(state))
-}
-
-function clampVolume(value: number) {
-  return Math.min(100, Math.max(0, Math.round(value)))
-}
-
-function isPlayMode(value: unknown): value is PlayMode {
-  return value === 'sequence' || value === 'loop' || value === 'shuffle' || value === 'single'
 }
 
 export default App

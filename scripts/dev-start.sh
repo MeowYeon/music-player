@@ -8,16 +8,15 @@ BACKEND_PID_FILE="$RUN_DIR/backend.pid"
 FRONTEND_PID_FILE="$RUN_DIR/frontend.pid"
 BACKEND_URL="http://127.0.0.1:8080"
 FRONTEND_URL="http://127.0.0.1:5173"
-GO_BIN="$ROOT_DIR/.tools/go-sdk/go/bin/go"
+export GOROOT="${GOROOT:-/usr/local/go}"
+export GOPATH="${GOPATH:-/home/ghp/go}"
+export PATH="$GOROOT/bin:$GOPATH/bin:$PATH"
+GO_BIN="$(command -v go || true)"
 
 mkdir -p "$LOG_DIR"
 
-if [[ ! -x "$GO_BIN" ]]; then
-  GO_BIN="$(command -v go || true)"
-fi
-
 if [[ -z "$GO_BIN" ]]; then
-  echo "Go is not available. Expected .tools/go-sdk/go/bin/go or go on PATH." >&2
+  echo "Go is not available. Expected go at $GOROOT/bin/go or on PATH." >&2
   exit 1
 fi
 

@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>聆听界面对比</title>
+  <style>
+    :root {
+      --ink: #141a18;
+      --muted: #66716d;
+      --line: #dce3df;
+      --paper: #f4f1ea;
+      --panel: #fffdf7;
+      --mint: #0f8764;
+      --mint-soft: #e2f2eb;
+      --pine: #213c35;
+      --gold: #c58c2e;
+      --shadow: 0 24px 70px rgba(27, 37, 34, .12);
+      color: var(--ink);
+      background: var(--paper);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; }
+    main {
+      min-height: 100vh;
+      padding: 24px;
+      background: linear-gradient(180deg, rgba(255,255,255,.7), rgba(244,241,234,.98)), var(--paper);
+    }
+    .intro {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 20px;
+      max-width: 1500px;
+      margin: 0 auto 18px;
+    }
+    h1 { margin: 0; font-size: 28px; letter-spacing: 0; }
+    .intro p { margin: 7px 0 0; max-width: 760px; color: var(--muted); line-height: 1.55; font-size: 14px; }
+    .recommend {
+      border: 1px solid rgba(15,135,100,.35);
+      border-radius: 8px;
+      background: var(--mint-soft);
+      color: var(--mint);
+      padding: 10px 12px;
+      font-size: 13px;
+      font-weight: 760;
+      white-space: nowrap;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      max-width: 1500px;
+      margin: 0 auto;
+    }
+    .option {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: rgba(255,255,255,.84);
+      box-shadow: var(--shadow);
+      cursor: pointer;
+    }
+    .option.selected {
+      border-color: var(--mint);
+      outline: 3px solid rgba(15,135,100,.18);
+    }
+    .label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid var(--line);
+      padding: 13px 15px;
+      background: #fffdf7;
+    }
+    .label h2 { margin: 0; font-size: 17px; }
+    .label span { color: var(--muted); font-size: 12px; }
+    .preview {
+      aspect-ratio: 16 / 10;
+      padding: 12px;
+      background: #f8f6ef;
+    }
+    .mock {
+      display: grid;
+      height: 100%;
+      border: 1px solid #d7dfda;
+      border-radius: 8px;
+      overflow: hidden;
+      background: rgba(255,253,247,.9);
+    }
+    .with-right { grid-template-columns: 46px minmax(0, 1fr) 170px; }
+    .without-right { grid-template-columns: 46px minmax(0, 1fr); }
+    .rail {
+      border-right: 1px solid var(--line);
+      background: #fffdf7;
+      padding: 10px 7px;
+    }
+    .mark {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      place-items: center;
+      border-radius: 8px;
+      background: var(--mint-soft);
+      color: var(--mint);
+      font-size: 14px;
+      font-weight: 850;
+      margin-bottom: 20px;
+    }
+    .railnav { display: grid; gap: 8px; }
+    .railnav div {
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      background: #eef2ee;
+    }
+    .railnav .on { background: var(--pine); }
+    .workspace {
+      display: grid;
+      grid-template-rows: auto auto auto 1fr auto;
+      gap: 9px;
+      min-width: 0;
+      padding: 12px;
+    }
+    .top {
+      display: grid;
+      grid-template-columns: 1fr 150px;
+      gap: 10px;
+      align-items: center;
+    }
+    .line {
+      height: 8px;
+      border-radius: 99px;
+      background: #c9d2ce;
+    }
+    .dark { background: #17211f; }
+    .search {
+      height: 26px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+    .hero {
+      display: grid;
+      grid-template-columns: 1fr 120px;
+      min-height: 86px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fffdf7;
+    }
+    .copy { display: grid; align-content: center; gap: 7px; padding: 13px; }
+    .wave {
+      display: flex;
+      align-items: end;
+      gap: 5px;
+      background: var(--pine);
+      padding: 12px;
+    }
+    .wave span {
+      width: 9px;
+      border-radius: 99px 99px 0 0;
+      background: rgba(255,255,255,.84);
+    }
+    .wave span:nth-child(2n) { background: #7fc5ad; }
+    .wave span:nth-child(3n) { background: var(--gold); }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 7px;
+    }
+    .stat {
+      height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,.78);
+      padding: 8px;
+    }
+    .tabs {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .seg {
+      display: flex;
+      gap: 4px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 3px;
+    }
+    .seg span {
+      width: 44px;
+      height: 22px;
+      border-radius: 7px;
+      background: #eef2ee;
+    }
+    .seg span:first-child { background: var(--pine); }
+    .button { width: 78px; height: 28px; border-radius: 8px; background: var(--mint); }
+    .table {
+      display: grid;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 24px 1.5fr .8fr .8fr 42px;
+      gap: 8px;
+      align-items: center;
+      min-height: 29px;
+      padding: 0 8px;
+      border-bottom: 1px solid #edf1ee;
+    }
+    .row:last-child { border-bottom: 0; }
+    .row.current { background: var(--mint-soft); }
+    .dot {
+      width: 17px;
+      height: 17px;
+      border: 1px solid var(--mint);
+      border-radius: 50%;
+      background: #fff;
+    }
+    .player {
+      display: grid;
+      grid-template-columns: 110px 1fr 110px;
+      gap: 8px;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 7px;
+    }
+    .progress {
+      height: 5px;
+      border-radius: 99px;
+      background: #dfe6e2;
+      overflow: hidden;
+    }
+    .progress::before {
+      display: block;
+      width: 40%;
+      height: 100%;
+      background: var(--mint);
+      content: "";
+    }
+    .right {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 9px;
+      min-width: 0;
+      border-left: 1px solid var(--line);
+      background: #fffdf7;
+      padding: 12px;
+    }
+    .cover {
+      min-height: 110px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, rgba(15,135,100,.96), rgba(40,107,136,.72));
+    }
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 8px;
+    }
+    .panel-grid { display: grid; gap: 7px; }
+    .notes {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      padding: 15px;
+      border-top: 1px solid var(--line);
+    }
+    .notes h3 {
+      margin: 0 0 8px;
+      font-size: 14px;
+    }
+    .notes ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.65;
+    }
+    @media (max-width: 1200px) {
+      .grid { grid-template-columns: 1fr; }
+      .preview { aspect-ratio: 16 / 8; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="intro">
+      <div>
+        <h1>聆听界面对比</h1>
+        <p>左边是刚才的高级版，右边是去掉右侧列后的新版。两者视觉语言接近，真正区别在于信息结构：右栏版像“仪表盘”，无右栏版更像“音乐库主工作台”。</p>
+      </div>
+      <div class="recommend">我推荐右侧：无右栏新版</div>
+    </section>
+
+    <section class="grid">
+      <article class="option" data-choice="with-right" onclick="selectOption(this)">
+        <div class="label">
+          <h2>带右栏高级版</h2>
+          <span>播放/扫描/队列集中展示</span>
+        </div>
+        <div class="preview">
+          <div class="mock with-right">
+            <aside class="rail"><div class="mark">聆</div><div class="railnav"><div class="on"></div><div></div><div></div><div></div></div></aside>
+            <section class="workspace">
+              <div class="top"><div><div class="line dark" style="width:34%"></div><div class="line" style="width:58%; margin-top:7px"></div></div><div class="search"></div></div>
+              <div class="hero"><div class="copy"><div class="line dark" style="width:50%"></div><div class="line" style="width:76%"></div></div><div class="wave"><span style="height:28px"></span><span style="height:62px"></span><span style="height:42px"></span><span style="height:76px"></span></div></div>
+              <div class="tabs"><div class="seg"><span></span><span></span><span></span><span></span></div><div class="button"></div></div>
+              <div class="table">
+                <div class="row current"><span class="dot"></span><span class="line dark"></span><span class="line"></span><span class="line"></span><span class="line"></span></div>
+                <div class="row"><span class="dot"></span><span class="line"></span><span class="line"></span><span class="line"></span><span class="line"></span></div>
+                <div class="row"><span class="dot"></span><span class="line"></span><span class="line"></span><span class="line"></span><span class="line"></span></div>
+              </div>
+              <div class="player"><div class="line dark"></div><div class="progress"></div><div class="line"></div></div>
+            </section>
+            <aside class="right">
+              <div class="cover"></div>
+              <div class="panel panel-grid"><div class="line dark" style="width:54%"></div><div class="line"></div><div class="progress"></div></div>
+              <div class="panel panel-grid"><div class="line dark" style="width:42%"></div><div class="line"></div><div class="line"></div></div>
+            </aside>
+          </div>
+        </div>
+        <div class="notes">
+          <div>
+            <h3>优点</h3>
+            <ul>
+              <li>状态信息一眼看全</li>
+              <li>更像控制台或播放器中心</li>
+              <li>右侧区域有明显视觉重量</li>
+            </ul>
+          </div>
+          <div>
+            <h3>问题</h3>
+            <ul>
+              <li>播放、扫描、队列会和各自页面重复</li>
+              <li>歌曲表格空间被压缩</li>
+              <li>页面更忙，长期用可能累</li>
+            </ul>
+          </div>
+        </div>
+      </article>
+
+      <article class="option selected" data-choice="without-right" onclick="selectOption(this)">
+        <div class="label">
+          <h2>无右栏新版</h2>
+          <span>功能各归其位，主区更完整</span>
+        </div>
+        <div class="preview">
+          <div class="mock without-right">
+            <aside class="rail"><div class="mark">聆</div><div class="railnav"><div class="on"></div><div></div><div></div><div></div></div></aside>
+            <section class="workspace">
+              <div class="top"><div><div class="line dark" style="width:24%"></div><div class="line" style="width:46%; margin-top:7px"></div></div><div class="search"></div></div>
+              <div class="hero"><div class="copy"><div class="line dark" style="width:34%"></div><div class="line" style="width:68%"></div></div><div class="wave"><span style="height:28px"></span><span style="height:62px"></span><span style="height:42px"></span><span style="height:76px"></span><span style="height:50px"></span></div></div>
+              <div class="stats"><div class="stat"><div class="line dark" style="width:38%"></div></div><div class="stat"><div class="line dark" style="width:28%"></div></div><div class="stat"><div class="line dark" style="width:48%"></div></div><div class="stat"><div class="line dark" style="width:34%"></div></div></div>
+              <div class="tabs"><div class="seg"><span></span><span></span><span></span><span></span></div><div class="button"></div></div>
+              <div class="table">
+                <div class="row current"><span class="dot"></span><span class="line dark"></span><span class="line"></span><span class="line"></span><span class="line"></span></div>
+                <div class="row"><span class="dot"></span><span class="line"></span><span class="line"></span><span class="line"></span><span class="line"></span></div>
+                <div class="row"><span class="dot"></span><span class="line"></span><span class="line"></span><span class="line"></span><span class="line"></span></div>
+              </div>
+              <div class="player"><div class="line dark"></div><div class="progress"></div><div class="line"></div></div>
+            </section>
+          </div>
+        </div>
+        <div class="notes">
+          <div>
+            <h3>优点</h3>
+            <ul>
+              <li>主工作区更宽，歌曲列表更舒服</li>
+              <li>扫描、队列、播放控制不重复陈列</li>
+              <li>更高级、更克制，也更适合 MVP</li>
+            </ul>
+          </div>
+          <div>
+            <h3>代价</h3>
+            <ul>
+              <li>队列需要从底部入口打开</li>
+              <li>媒体库状态要切到媒体库页看细节</li>
+              <li>首页状态摘要要控制得更精炼</li>
+            </ul>
+          </div>
+        </div>
+      </article>
+    </section>
+  </main>
+  <script>
+    function selectOption(el) {
+      document.querySelectorAll('.option').forEach((node) => node.classList.remove('selected'));
+      el.classList.add('selected');
+      fetch('/__event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'click',
+          choice: el.dataset.choice,
+          text: el.querySelector('h2').textContent,
+          timestamp: Math.floor(Date.now() / 1000)
+        })
+      }).catch(() => {});
+    }
+  </script>
+</body>
+</html>

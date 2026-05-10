@@ -65,9 +65,3 @@ npm run services:stop
 npm run build
 go test ./...
 ```
-
-如果当前环境没有系统 Go，可以使用项目本地 Go SDK：
-
-```bash
-.tools/go-sdk/go/bin/go test ./...
-```

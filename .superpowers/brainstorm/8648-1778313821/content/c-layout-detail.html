@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>阿言 C 方案细化</title>
+  <style>
+    :root {
+      --ink: #17211f;
+      --muted: #69736f;
+      --line: #dfe5e1;
+      --paper: #fbfbf7;
+      --panel: #ffffff;
+      --mint: #14966f;
+      --soft: #e7f5ef;
+      --gold: #d99e32;
+      --clay: #c9624e;
+      --blue: #3d728d;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: #f5f4ef;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; }
+    .page { max-width: 1440px; margin: 0 auto; padding: 26px; }
+    .lead {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: end;
+      margin-bottom: 18px;
+    }
+    h1 { margin: 0; font-size: 28px; letter-spacing: 0; }
+    .lead p { margin: 6px 0 0; max-width: 780px; color: var(--muted); line-height: 1.6; }
+    .selectable {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,.8);
+      padding: 10px 12px;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .selectable.selected {
+      border-color: var(--mint);
+      outline: 3px solid rgba(20,150,111,.17);
+      color: var(--ink);
+    }
+    .app {
+      border: 1px solid #dce3df;
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--paper);
+      box-shadow: 0 18px 50px rgba(25, 42, 38, .09);
+    }
+    .topnav {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 18px;
+      align-items: center;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255,255,255,.88);
+      padding: 12px 18px;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; min-width: 170px; }
+    .mark {
+      display: grid;
+      width: 36px;
+      height: 36px;
+      place-items: center;
+      border-radius: 8px;
+      background: var(--soft);
+      color: var(--mint);
+      font-weight: 800;
+    }
+    .brand strong { font-size: 17px; }
+    .brand span { color: var(--muted); font-size: 12px; }
+    .tabs { display: flex; gap: 6px; min-width: 0; overflow: hidden; }
+    .tab {
+      display: inline-flex;
+      height: 36px;
+      align-items: center;
+      gap: 8px;
+      border-radius: 8px;
+      padding: 0 12px;
+      color: #5e6965;
+      font-size: 14px;
+      font-weight: 650;
+    }
+    .tab.on { background: var(--soft); color: var(--mint); }
+    .search {
+      display: flex;
+      width: 300px;
+      max-width: 30vw;
+      height: 38px;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: #9aa5a0;
+      padding: 0 12px;
+      font-size: 13px;
+    }
+    .work {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 16px;
+      min-height: 560px;
+      padding: 18px 18px 106px;
+    }
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 18px;
+      align-items: end;
+    }
+    .title h2 { margin: 0; font-size: 24px; }
+    .title p { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+    .stats { display: flex; gap: 10px; }
+    .stat {
+      min-width: 112px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,.72);
+      padding: 10px 12px;
+    }
+    .stat strong { display: block; font-size: 20px; }
+    .stat span { color: var(--muted); font-size: 12px; }
+    .content {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 300px;
+      gap: 16px;
+      min-height: 0;
+    }
+    .table, .sidepanel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: rgba(255,255,255,.78);
+    }
+    .table-head, .song-row {
+      display: grid;
+      grid-template-columns: 34px 1.6fr .9fr .9fr 70px 56px;
+      gap: 12px;
+      align-items: center;
+      padding: 0 14px;
+    }
+    .table-head {
+      height: 42px;
+      color: #7f8a86;
+      font-size: 12px;
+      font-weight: 720;
+      border-bottom: 1px solid var(--line);
+      background: #fbfcf8;
+    }
+    .song-row {
+      min-height: 56px;
+      border-bottom: 1px solid #edf0ee;
+      font-size: 13px;
+    }
+    .song-row:last-child { border-bottom: 0; }
+    .song-row.playing { background: var(--soft); }
+    .play {
+      width: 28px;
+      height: 28px;
+      border: 1px solid var(--mint);
+      border-radius: 50%;
+      background: #fff;
+    }
+    .song-title strong { display: block; color: var(--ink); font-size: 14px; }
+    .song-title span, .cell-muted { color: var(--muted); }
+    .format { color: var(--mint); font-weight: 760; text-transform: uppercase; }
+    .sidepanel { padding: 14px; }
+    .sidepanel h3 { margin: 0 0 10px; font-size: 15px; }
+    .path {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 10px;
+    }
+    .button {
+      display: grid;
+      height: 36px;
+      place-items: center;
+      border-radius: 8px;
+      background: var(--mint);
+      color: white;
+      font-weight: 760;
+      margin-bottom: 14px;
+    }
+    .scan {
+      display: grid;
+      gap: 9px;
+      border-top: 1px solid var(--line);
+      padding-top: 12px;
+    }
+    .scan-row {
+      display: grid;
+      gap: 5px;
+      border-radius: 8px;
+      background: #fbfcf8;
+      padding: 10px;
+    }
+    .meter { height: 6px; border-radius: 20px; background: #dce4df; overflow: hidden; }
+    .meter span { display: block; width: 52%; height: 100%; background: var(--mint); }
+    .player {
+      position: fixed;
+      left: 50%;
+      bottom: 18px;
+      transform: translateX(-50%);
+      display: grid;
+      grid-template-columns: minmax(180px, 300px) minmax(280px, 560px) 220px;
+      gap: 18px;
+      align-items: center;
+      width: min(1180px, calc(100vw - 52px));
+      border: 1px solid #dce3df;
+      border-radius: 8px;
+      background: rgba(255,255,255,.94);
+      box-shadow: 0 18px 50px rgba(25, 42, 38, .16);
+      padding: 12px 14px;
+    }
+    .track { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .cover {
+      width: 52px;
+      height: 52px;
+      border-radius: 8px;
+      background:
+        linear-gradient(135deg, rgba(20,150,111,.95), rgba(61,114,141,.75)),
+        #dfe6e2;
+    }
+    .track strong, .track span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .track span { color: var(--muted); font-size: 13px; margin-top: 3px; }
+    .center { display: grid; gap: 9px; }
+    .controls { display: flex; justify-content: center; gap: 10px; }
+    .ctrl {
+      width: 30px;
+      height: 30px;
+      border: 1px solid var(--line);
+      border-radius: 50%;
+      background: #fff;
+    }
+    .ctrl.main { width: 38px; height: 38px; background: var(--mint); border-color: var(--mint); }
+    .progress { height: 5px; border-radius: 20px; background: #dce4df; overflow: hidden; }
+    .progress span { display: block; width: 38%; height: 100%; background: var(--mint); }
+    .tools { display: flex; justify-content: flex-end; gap: 8px; align-items: center; }
+    .pill { height: 32px; border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; color: var(--muted); font-size: 12px; }
+    .pill.queue { border-color: rgba(20,150,111,.42); color: var(--mint); font-weight: 720; }
+    @media (max-width: 980px) {
+      .topnav { grid-template-columns: 1fr; }
+      .search { width: 100%; max-width: none; }
+      .content { grid-template-columns: 1fr; }
+      .stats { display: none; }
+      .player { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="lead">
+      <div>
+        <h1>C 方案细化：顶栏紧凑型</h1>
+        <p>导航上移，左侧栏消失，主区域更像一个清爽的本地音乐库窗口。媒体库扫描保留为右侧工作面板，底部播放器仍是全局唯一控制区。</p>
+      </div>
+      <div class="selectable" data-choice="approve-c-layout" onclick="toggleSelect(this)">这个布局方向可以继续</div>
+    </section>
+
+    <section class="app">
+      <header class="topnav">
+        <div class="brand">
+          <div class="mark">言</div>
+          <div><strong>阿言</strong><span> Ayan v0.4</span></div>
+        </div>
+        <nav class="tabs">
+          <div class="tab on">歌曲</div>
+          <div class="tab">歌单</div>
+          <div class="tab">我喜欢</div>
+          <div class="tab">最近播放</div>
+          <div class="tab">媒体库</div>
+        </nav>
+        <div class="search">搜索标题、艺术家或专辑</div>
+      </header>
+      <section class="work">
+        <div class="hero">
+          <div class="title">
+            <h2>歌曲管理</h2>
+            <p>2 个媒体库 · 128 首歌曲 · 扫描中</p>
+          </div>
+          <div class="stats">
+            <div class="stat"><strong>128</strong><span>歌曲</span></div>
+            <div class="stat"><strong>2</strong><span>媒体库</span></div>
+            <div class="stat"><strong>52%</strong><span>扫描进度</span></div>
+          </div>
+        </div>
+        <div class="content">
+          <div class="table">
+            <div class="table-head"><span></span><span>标题</span><span>歌手</span><span>专辑</span><span>时长</span><span>格式</span></div>
+            <div class="song-row playing"><div class="play"></div><div class="song-title"><strong>雨后街灯</strong><span>/mnt/c/Users/.../雨后街灯.flac</span></div><div>林野</div><div class="cell-muted">城市慢拍</div><div>4:07</div><div class="format">flac</div></div>
+            <div class="song-row"><div class="play"></div><div class="song-title"><strong>Nocturne in C Minor</strong><span>/Music/test/Nocturne in C Minor.mp3</span></div><div>Mira Vale</div><div class="cell-muted">Quiet Hours</div><div>5:12</div><div class="format">mp3</div></div>
+            <div class="song-row"><div class="play"></div><div class="song-title"><strong>海盐汽水</strong><span>/home/ghp/Music/海盐汽水.m4a</span></div><div>夏末合唱团</div><div class="cell-muted">日光练习</div><div>3:41</div><div class="format">m4a</div></div>
+            <div class="song-row"><div class="play"></div><div class="song-title"><strong>晨间片段</strong><span>/home/ghp/Music/晨间片段.wav</span></div><div class="cell-muted">未知艺术家</div><div class="cell-muted">未知专辑</div><div>2:58</div><div class="format">wav</div></div>
+          </div>
+          <aside class="sidepanel">
+            <h3>媒体库扫描</h3>
+            <div class="path">/mnt/c/Users/guohp/Music/test</div>
+            <div class="button">添加并扫描</div>
+            <div class="scan">
+              <div class="scan-row">
+                <strong>正在扫描</strong>
+                <span class="cell-muted">128 / 342 个文件</span>
+                <div class="meter"><span></span></div>
+              </div>
+              <div class="scan-row">
+                <strong>已完成</strong>
+                <span class="cell-muted">/home/ghp/Music · 125 首</span>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </section>
+    </section>
+
+    <footer class="player">
+      <div class="track"><div class="cover"></div><div><strong>雨后街灯</strong><span>林野 · 城市慢拍</span></div></div>
+      <div class="center"><div class="controls"><div class="ctrl"></div><div class="ctrl main"></div><div class="ctrl"></div></div><div class="progress"><span></span></div></div>
+      <div class="tools"><div class="pill">顺序播放</div><div class="pill">音量 72</div><div class="pill queue">队列 12</div></div>
+    </footer>
+  </main>
+  <script>
+    function toggleSelect(el) {
+      document.querySelectorAll('.selectable').forEach((node) => node.classList.remove('selected'));
+      el.classList.add('selected');
+      fetch('/__event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'click',
+          choice: el.dataset.choice,
+          text: el.textContent.trim(),
+          timestamp: Math.floor(Date.now() / 1000)
+        })
+      }).catch(() => {});
+    }
+  </script>
+</body>
+</html>

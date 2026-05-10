@@ -137,10 +137,21 @@ web/src/App.tsx
 主要文件：
 
 - `web/src/App.tsx`
-  - 页面布局和导航。
+  - v0.6 主界面编排。
   - 媒体库页、歌曲页、普通歌单、我喜欢、最近播放。
-  - 底部播放器。
-  - 播放队列、播放顺序、播放进度、切歌、音量和错误状态。
+  - 播放状态、播放队列、播放进度、切歌、音量和错误状态。
+
+- `web/src/player.ts`
+  - 播放模式轮转、下一首计算、队列插入和播放器本地存储兼容。
+
+- `web/src/tracks.ts`
+  - 歌曲排序和艺术家、专辑展示 fallback。
+
+- `web/src/playback.ts`
+  - 播放状态文案和时长格式化。
+
+- `web/src/components/QueueDrawer.tsx`
+  - 从播放器入口打开的播放队列抽屉。
 
 - `web/src/api.ts`
   - 前端 API client。
@@ -241,16 +252,8 @@ npm run build
 go test ./...
 ```
 
-如果系统 PATH 中没有 Go，也可以使用项目本地 Go SDK：
-
-```bash
-.tools/go-sdk/go/bin/go test ./...
-```
-
 ## 运行数据
 
 - SQLite 数据库默认在 `data/music.db`。
 - 开发服务 pid 和日志在 `.run/`。
-- `.tools/` 存放项目本地 Go SDK。
-
 这些目录都不会提交到 git。

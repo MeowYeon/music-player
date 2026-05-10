@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>聆听 · 歌单管理静态预览</title>
+  <style>
+    :root {
+      --ink: #141a18;
+      --muted: #68736e;
+      --faint: #98a39e;
+      --line: #dce3df;
+      --paper: #f4f1ea;
+      --panel: #fffdf7;
+      --mint: #0f8764;
+      --mint-soft: #e2f2eb;
+      --pine: #213c35;
+      --gold: #c58c2e;
+      --blue: #286b88;
+      --coral: #b55243;
+      --shadow: 0 28px 80px rgba(27, 37, 34, .14);
+      font-family: "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 12% 18%, rgba(15,135,100,.14), transparent 26rem),
+        radial-gradient(circle at 88% 12%, rgba(197,140,46,.16), transparent 24rem),
+        linear-gradient(180deg, rgba(255,255,255,.66), rgba(244,241,234,.98)),
+        var(--paper);
+    }
+    .screen { min-height: 100vh; padding: 18px; }
+    .app {
+      display: grid;
+      grid-template-columns: 82px minmax(0, 1fr);
+      min-height: calc(100vh - 36px);
+      overflow: hidden;
+      border: 1px solid #d7dfda;
+      border-radius: 8px;
+      background: rgba(255,253,247,.9);
+      box-shadow: var(--shadow);
+    }
+    .rail {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      border-right: 1px solid var(--line);
+      background: #fffdf7;
+      padding: 16px 12px;
+    }
+    .brand, .rail-btn, .icon-btn { display: grid; place-items: center; }
+    .brand { width: 48px; height: 48px; border: 1px solid #cce5da; border-radius: 8px; background: var(--mint-soft); color: var(--mint); font-weight: 900; }
+    .rail nav { display: grid; align-content: start; justify-items: center; gap: 12px; margin-top: 30px; }
+    .rail-btn { width: 44px; height: 44px; border-radius: 8px; color: #65716d; }
+    .rail-btn.active { background: var(--pine); color: white; }
+    .workspace { display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 18px; min-width: 0; padding: 22px 26px 108px; }
+    .top { display: grid; grid-template-columns: minmax(0, 1fr) 400px; align-items: center; gap: 22px; }
+    .top h1 { margin: 0; font-size: 27px; line-height: 1; }
+    .top p { margin: 7px 0 0; color: var(--muted); font-size: 13px; }
+    .search { display: flex; align-items: center; height: 42px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,.84); color: var(--faint); padding: 0 13px; font-size: 13px; }
+
+    /* Preview-specific playlist management language */
+    .playlist-lab {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(360px, .9fr);
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 16px;
+      min-height: 0;
+    }
+    .catalog-hero {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 280px;
+      min-height: 178px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background:
+        linear-gradient(135deg, rgba(255,253,247,.96), rgba(226,242,235,.72)),
+        var(--panel);
+    }
+    .hero-copy { display: grid; align-content: center; gap: 12px; padding: 28px; }
+    .eyebrow { color: var(--mint); font-size: 12px; font-weight: 850; letter-spacing: .05em; text-transform: uppercase; }
+    .hero-copy h2 { max-width: 780px; margin: 0; font-size: clamp(34px, 5vw, 62px); line-height: .95; letter-spacing: -.055em; }
+    .hero-copy p { max-width: 640px; margin: 0; color: var(--muted); font-size: 14px; line-height: 1.7; }
+    .hero-stat { display: grid; grid-template-columns: repeat(2, 1fr); border-left: 1px solid var(--line); background: rgba(255,255,255,.44); }
+    .hero-stat div { display: grid; align-content: center; border-bottom: 1px solid var(--line); padding: 18px; }
+    .hero-stat strong { font-size: 30px; line-height: 1; }
+    .hero-stat span { margin-top: 8px; color: var(--muted); font-size: 12px; font-weight: 760; }
+
+    .playlist-board {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,.72);
+      overflow: hidden;
+    }
+    .board-head, .detail-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 58px; border-bottom: 1px solid var(--line); background: #fbfcf8; padding: 0 16px; }
+    .board-head h3, .detail-head h3 { margin: 0; font-size: 16px; }
+    .board-head span, .detail-head span { color: var(--muted); font-size: 13px; }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      padding: 16px;
+    }
+    .playlist-card, .new-card {
+      position: relative;
+      min-height: 190px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fffdf7;
+      padding: 14px;
+    }
+    .playlist-card::before {
+      position: absolute;
+      right: -34px;
+      top: -28px;
+      width: 128px;
+      height: 128px;
+      border-radius: 50%;
+      background: conic-gradient(from 210deg, var(--pine), var(--mint), var(--gold), var(--pine));
+      opacity: .92;
+      content: "";
+    }
+    .playlist-card::after {
+      position: absolute;
+      right: 13px;
+      top: 35px;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: #fffdf7;
+      content: "";
+    }
+    .playlist-card.active { border-color: rgba(15,135,100,.46); background: linear-gradient(180deg, #fffdf7, rgba(226,242,235,.58)); box-shadow: 0 18px 44px rgba(27,37,34,.12); }
+    .card-no { display: inline-grid; place-items: center; width: 34px; height: 28px; border-radius: 6px; background: var(--mint-soft); color: var(--mint); font-size: 11px; font-weight: 900; }
+    .playlist-card h4 { position: relative; max-width: 70%; margin: 48px 0 0; font-size: 23px; line-height: 1.05; letter-spacing: -.025em; }
+    .playlist-card p { margin: 10px 0 0; color: var(--muted); font-size: 13px; }
+    .card-actions { position: absolute; left: 14px; right: 14px; bottom: 14px; display: flex; align-items: center; justify-content: space-between; }
+    .play-pill { display: inline-flex; align-items: center; gap: 7px; height: 32px; border-radius: 999px; background: var(--pine); color: white; padding: 0 12px; font-size: 12px; font-weight: 820; }
+    .card-meta { color: var(--faint); font-size: 12px; }
+    .new-card {
+      display: grid;
+      place-items: center;
+      border-style: dashed;
+      background:
+        linear-gradient(135deg, rgba(255,255,255,.56), rgba(226,242,235,.55));
+      text-align: center;
+    }
+    .new-card .plus { display: grid; place-items: center; width: 54px; height: 54px; margin: 0 auto 14px; border-radius: 50%; background: var(--mint); color: white; font-size: 30px; }
+    .new-card strong { display: block; font-size: 18px; }
+    .new-card span { display: block; margin-top: 8px; color: var(--muted); font-size: 13px; }
+
+    .playlist-detail {
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,.84);
+    }
+    .detail-head { min-height: 82px; align-items: flex-start; padding-block: 16px; }
+    .detail-head h3 { font-size: 24px; line-height: 1.05; }
+    .detail-actions { display: flex; gap: 8px; }
+    .icon-btn { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: #596561; }
+    .toolbar { display: flex; gap: 8px; overflow-x: auto; border-bottom: 1px solid var(--line); padding: 10px 16px; background: #fffdf7; }
+    .toolbar button { height: 34px; border: 0; border-radius: 8px; background: #edf1ee; color: #3f4944; padding: 0 12px; font-weight: 760; white-space: nowrap; }
+    .toolbar .primary { background: var(--mint); color: white; }
+    .song-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) 76px 52px; gap: 12px; align-items: center; min-height: 62px; border-bottom: 1px solid #edf1ee; padding: 0 16px; font-size: 13px; }
+    .song-row.active { background: linear-gradient(90deg, rgba(15,135,100,.13), rgba(226,242,235,.72)); }
+    .dot { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid rgba(15,135,100,.42); border-radius: 50%; color: var(--mint); }
+    .song-title strong, .song-title span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .song-title span { margin-top: 5px; color: var(--faint); font-size: 12px; }
+    .fmt { color: var(--mint); font-size: 12px; font-weight: 850; text-transform: uppercase; }
+
+    .player {
+      position: fixed;
+      left: 50%;
+      bottom: 18px;
+      transform: translateX(-50%);
+      display: grid;
+      grid-template-columns: 280px minmax(360px, 1fr) 220px;
+      gap: 18px;
+      align-items: center;
+      width: min(1180px, calc(100vw - 54px));
+      border: 1px solid #d7dfda;
+      border-radius: 8px;
+      background: rgba(255,255,255,.95);
+      box-shadow: 0 24px 60px rgba(27,37,34,.18);
+      padding: 12px 14px;
+    }
+    .small-cover { width: 52px; height: 52px; border-radius: 8px; background: linear-gradient(135deg, var(--mint), var(--blue)); }
+    .track { display: grid; grid-template-columns: 52px 1fr; gap: 12px; align-items: center; min-width: 0; }
+    .track strong, .track span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .track span { margin-top: 5px; color: var(--faint); font-size: 12px; }
+    .controls { display: flex; justify-content: center; gap: 9px; }
+    .control { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 50%; background: #fff; }
+    .control.main { width: 42px; height: 42px; background: var(--pine); color: white; }
+    .progress { height: 6px; border-radius: 999px; background: #dfe6e2; overflow: hidden; }
+    .progress span { display: block; width: 38%; height: 100%; background: var(--mint); }
+
+    @media (max-width: 1180px) {
+      .playlist-lab { grid-template-columns: 1fr; }
+      .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .catalog-hero { grid-template-columns: 1fr; }
+      .hero-stat { border-left: 0; border-top: 1px solid var(--line); }
+    }
+    @media (max-width: 760px) {
+      .screen { padding: 0; }
+      .app { display: block; min-height: 100vh; border: 0; border-radius: 0; }
+      .rail { display: none; }
+      .workspace { padding: 18px 14px 128px; }
+      .top { grid-template-columns: 1fr; }
+      .cards { grid-template-columns: 1fr; }
+      .hero-stat { grid-template-columns: 1fr 1fr; }
+      .player { grid-template-columns: 1fr auto; width: calc(100vw - 20px); }
+      .player .progress { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="screen">
+    <div class="app">
+      <aside class="rail">
+        <div class="brand">聆</div>
+        <nav>
+          <div class="rail-btn">♪</div>
+          <div class="rail-btn">库</div>
+          <div class="rail-btn active">单</div>
+          <div class="rail-btn">♡</div>
+          <div class="rail-btn">时</div>
+        </nav>
+      </aside>
+      <main class="workspace">
+        <header class="top">
+          <div>
+            <h1>歌单管理</h1>
+            <p>4 个普通歌单 · 128 首收录 · 已连接</p>
+          </div>
+          <div class="search">搜索歌单、歌曲或场景</div>
+        </header>
+
+        <section class="playlist-lab" aria-label="歌单管理预览">
+          <div class="catalog-hero">
+            <div class="hero-copy">
+              <span class="eyebrow">Playlist Catalog</span>
+              <h2>把音乐整理成可进入的房间</h2>
+              <p>歌单管理不再是左侧表单和右侧表格。这里先展示你的歌单集合；新建歌单是一张空白唱片卡；选中后再进入歌曲明细。</p>
+            </div>
+            <div class="hero-stat">
+              <div><strong>04</strong><span>歌单</span></div>
+              <div><strong>128</strong><span>累计收录</span></div>
+              <div><strong>03</strong><span>本周更新</span></div>
+              <div><strong>01</strong><span>正在编辑</span></div>
+            </div>
+          </div>
+
+          <section class="playlist-board">
+            <div class="board-head">
+              <div><h3>歌单卡片墙</h3><span>一个名称只在卡片上成为主角</span></div>
+            </div>
+            <div class="cards">
+              <article class="playlist-card active">
+                <span class="card-no">01</span>
+                <h4>夜间散步</h4>
+                <p>城市低光、慢速节拍</p>
+                <div class="card-actions"><span class="play-pill">▶ 播放</span><span class="card-meta">36 首</span></div>
+              </article>
+              <article class="playlist-card">
+                <span class="card-no">02</span>
+                <h4>午后整理</h4>
+                <p>安静、不打扰的工作流</p>
+                <div class="card-actions"><span class="play-pill">▶ 播放</span><span class="card-meta">44 首</span></div>
+              </article>
+              <article class="playlist-card">
+                <span class="card-no">03</span>
+                <h4>旧磁带</h4>
+                <p>复古合成器与旧记忆</p>
+                <div class="card-actions"><span class="play-pill">▶ 播放</span><span class="card-meta">28 首</span></div>
+              </article>
+              <article class="new-card">
+                <div>
+                  <span class="plus">+</span>
+                  <strong>新建歌单</strong>
+                  <span>点击后再出现命名输入，而不是常驻左侧表单</span>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section class="playlist-detail">
+            <div class="detail-head">
+              <div>
+                <span class="eyebrow">Selected Playlist</span>
+                <h3>夜间散步</h3>
+                <span>36 首歌曲 · 最近更新今天</span>
+              </div>
+              <div class="detail-actions">
+                <button class="icon-btn">改</button>
+                <button class="icon-btn">删</button>
+              </div>
+            </div>
+            <div class="toolbar">
+              <button class="primary">播放全部</button>
+              <button>添加歌曲</button>
+              <button>批量整理</button>
+              <button>导出清单</button>
+            </div>
+            <div class="song-row active">
+              <div class="dot">▶</div>
+              <div class="song-title"><strong>Lost in the Light</strong><span>Palace · So Long Forever</span></div>
+              <div>03:42</div><div class="fmt">FLAC</div>
+            </div>
+            <div class="song-row">
+              <div class="dot">▶</div>
+              <div class="song-title"><strong>Night Drive</strong><span>Chromatics · Tick of the Clock</span></div>
+              <div>04:11</div><div class="fmt">MP3</div>
+            </div>
+            <div class="song-row">
+              <div class="dot">▶</div>
+              <div class="song-title"><strong>Holocene</strong><span>Bon Iver · Bon Iver</span></div>
+              <div>05:36</div><div class="fmt">FLAC</div>
+            </div>
+            <div class="song-row">
+              <div class="dot">▶</div>
+              <div class="song-title"><strong>Midnight City</strong><span>M83 · Hurry Up, We're Dreaming</span></div>
+              <div>04:03</div><div class="fmt">AAC</div>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <footer class="player">
+    <div class="track"><div class="small-cover"></div><div><strong>Lost in the Light</strong><span>Palace</span></div></div>
+    <div><div class="controls"><div class="control">‹</div><div class="control main">▶</div><div class="control">›</div></div><div class="progress"><span></span></div></div>
+    <div style="text-align:right;color:var(--muted);font-size:13px;">队列 · 音量</div>
+  </footer>
+</body>
+</html>
