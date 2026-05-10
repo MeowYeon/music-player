@@ -34,6 +34,11 @@ type Track struct {
 	Liked      bool
 }
 
+type RecentTrackItem struct {
+	Track        Track
+	LastPlayedAt string
+}
+
 type MusicInput struct {
 	Path       string
 	Title      string

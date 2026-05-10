@@ -352,6 +352,49 @@ func (s *Store) ListSystemPlaylistTracks(ctx context.Context, playlistType strin
 	return s.ListPlaylistTracks(ctx, id)
 }
 
+func (s *Store) ListRecentTrackItems(ctx context.Context) ([]RecentTrackItem, error) {
+	id, err := s.systemPlaylistID(ctx, "recent")
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT `+trackSelectColumns()+`, COALESCE(pm.last_played_at, pm.added_at)
+		FROM music m
+		JOIN playlist_music pm ON pm.music_id = m.id
+		WHERE pm.playlist_id = ?
+		ORDER BY COALESCE(pm.last_played_at, pm.added_at) DESC
+		LIMIT 50
+	`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []RecentTrackItem
+	for rows.Next() {
+		var item RecentTrackItem
+		if err := rows.Scan(
+			&item.Track.ID,
+			&item.Track.Path,
+			&item.Track.Title,
+			&item.Track.Artist,
+			&item.Track.Album,
+			&item.Track.DurationMS,
+			&item.Track.Format,
+			&item.Track.SizeBytes,
+			&item.Track.MTimeUnix,
+			&item.Track.CreatedAt,
+			&item.Track.UpdatedAt,
+			&item.Track.Liked,
+			&item.LastPlayedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func (s *Store) LikeTrack(ctx context.Context, trackID int64) error {
 	if err := s.ensureMusic(ctx, trackID); err != nil {
 		return err

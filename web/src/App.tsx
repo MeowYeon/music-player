@@ -282,7 +282,8 @@ function App() {
   const selectedPlaylist = playlists.find((playlist) => playlist.id === selectedPlaylistId) ?? null
   const activePlaylistTracks = playlistTracksQuery.data ?? []
   const likedTracks = likedTracksQuery.data ?? []
-  const recentTracks = recentTracksQuery.data ?? []
+  const recentTrackItems = recentTracksQuery.data ?? []
+  const recentTracks = recentTrackItems.map((item) => item.track)
   const allKnownTracks = useMemo(() => {
     const byID = new Map<number, Track>()
     for (const track of [...tracks, ...activePlaylistTracks, ...likedTracks, ...recentTracks, ...queue]) {
