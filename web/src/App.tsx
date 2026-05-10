@@ -59,7 +59,7 @@ import {
   type PlayMode,
   type StoredPlayerState,
 } from './player'
-import { formatDuration, formatDurationSeconds, playbackLabel, playModeLabel, type PlaybackStatus } from './playback'
+import { formatDuration, formatDurationSeconds, playModeLabel, type PlaybackStatus } from './playback'
 import { displayAlbum, displayArtist, sortTracks, type TrackSortField } from './tracks'
 
 const defaultLibraryPath = '/mnt/c/Users/guohp/Music/test'
@@ -463,6 +463,16 @@ function App() {
     playTrack(firstTrack)
   }
 
+  function handleShuffleTrackList(trackList: Track[]) {
+    const shuffledTracks = [...trackList]
+    for (let index = shuffledTracks.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(Math.random() * (index + 1))
+      ;[shuffledTracks[index], shuffledTracks[swapIndex]] = [shuffledTracks[swapIndex], shuffledTracks[index]]
+    }
+    setPlayMode('shuffle')
+    handlePlayTrackList(shuffledTracks)
+  }
+
   function handleToggleLike(track: Track) {
     toggleLikeMutation.mutate(track)
   }
@@ -750,6 +760,7 @@ function App() {
             onToggleTrackSelected={handleToggleTrackSelected}
             onToggleAllTracks={handleToggleAllTracks}
             onPlayAll={handlePlayTrackList}
+            onShuffleAll={handleShuffleTrackList}
             onPlaySelected={handlePlayTrackList}
             onPlayTrack={handlePlayTrackFromList}
             onToggleLike={handleToggleLike}
@@ -1132,6 +1143,7 @@ function SongsView({
   onToggleTrackSelected,
   onToggleAllTracks,
   onPlayAll,
+  onShuffleAll,
   onPlaySelected,
   onPlayTrack,
   onToggleLike,
@@ -1165,6 +1177,7 @@ function SongsView({
   onToggleTrackSelected: (track: Track, checked: boolean) => void
   onToggleAllTracks: (tracks: Track[], checked: boolean) => void
   onPlayAll: (tracks: Track[]) => void
+  onShuffleAll: (tracks: Track[]) => void
   onPlaySelected: (tracks: Track[]) => void
   onPlayTrack: (track: Track) => void
   onToggleLike: (track: Track) => void
@@ -1178,44 +1191,52 @@ function SongsView({
   playlists: Playlist[]
 }) {
   const selectedTracks = tracks.filter((track) => selectedTrackIds.includes(track.id))
+  const activeFilterCount = [formatFilter, likedOnly ? 'liked' : ''].filter(Boolean).length
+  const hasSearch = Boolean(query.trim())
+  const formatSummary = availableFormats.length ? availableFormats.join(' / ').toUpperCase() : '等待扫描'
   return (
-    <section className="library-pane" aria-label="歌曲库">
-      <div className="hero">
-        <div className="now-summary">
-          <div className="now-copy">
-            <span className="eyebrow">正在播放</span>
-            <h2>{currentTrack?.title ?? '未选择歌曲'}</h2>
-            <p>{currentTrack ? `${displayArtist(currentTrack)} · ${displayAlbum(currentTrack)} · ${playbackLabel(playbackStatus)}` : '从歌曲列表选择一首开始播放'}</p>
-            {playerError && <em className="inline-error">{playerError}</em>}
-          </div>
-          <div className="passive-wave" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-            <span />
-            <span />
-            <span />
-            <span />
+    <section className="library-pane songs-workspace" aria-label="歌曲库">
+      <div className="songs-hero">
+        <div className="songs-hero-copy">
+          <span className="eyebrow">歌曲工作区</span>
+          <h2>{hasSearch ? `搜索“${query.trim()}”` : '从整座曲库开始'}</h2>
+          <p>
+            {hasSearch
+              ? `找到 ${tracks.length} 首匹配歌曲。结果会跟随全局搜索实时更新。`
+              : `已索引 ${totalTracks} 首歌曲，保留桌面表格的效率，同时把启动播放、筛选和结果状态放在最前面。`}
+          </p>
+          {playerError && <em className="inline-error">{playerError}</em>}
+          <div className="songs-hero-actions">
+            <button type="button" className="primary-button" onClick={() => onPlayAll(tracks)} disabled={!tracks.length}>
+              <Play size={17} fill="currentColor" />
+              播放全部
+            </button>
+            <button type="button" className="secondary-button" onClick={() => onShuffleAll(tracks)} disabled={!tracks.length}>
+              <Shuffle size={17} />
+              随机播放
+            </button>
           </div>
         </div>
 
-        <div className="status-grid" aria-label="曲库状态">
-          <div className="stat">
-            <strong>{totalTracks}</strong>
-            <span>索引歌曲</span>
-          </div>
-          <div className="stat">
+        <div className="songs-filter-summary" aria-label="浏览摘要">
+          <div>
             <strong>{tracks.length}</strong>
-            <span>当前筛选</span>
+            <span>{hasSearch ? '搜索结果' : '当前可播放'}</span>
           </div>
-          <div className="stat">
-            <strong>{availableFormats.length}</strong>
-            <span>音频格式</span>
+          <div>
+            <strong>{activeFilterCount}</strong>
+            <span>启用筛选</span>
           </div>
-          <div className="stat">
+          <div>
             <strong>{selectedTrackIds.length}</strong>
             <span>已选歌曲</span>
           </div>
+          <p title={formatSummary}>格式：{formatSummary}</p>
+          {(formatFilter || likedOnly) && (
+            <p>
+              已限制为{formatFilter ? ` ${formatFilter.toUpperCase()}` : ''}{likedOnly ? ' 我喜欢' : ''}
+            </p>
+          )}
         </div>
       </div>
 
