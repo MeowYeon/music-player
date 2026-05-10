@@ -65,9 +65,12 @@ import {
   type StoredPlayerState,
 } from './player'
 import { formatDuration, formatDurationSeconds, playbackLabel, playModeLabel, type PlaybackStatus } from './playback'
-import { displayAlbum, displayArtist, sortTracks, type TrackSortField } from './tracks'
+import { displayAlbum, displayArtist, retainKnownTrackIds, sortTracks, type TrackSortField } from './tracks'
 
 const defaultLibraryPath = '/mnt/c/Users/guohp/Music/test'
+const emptyLibraries: LibraryItem[] = []
+const emptyPlaylists: Playlist[] = []
+const emptyTracks: Track[] = []
 type ViewMode = 'libraries' | 'songs' | 'playlists' | 'liked' | 'recent' | 'search'
 
 function App() {
@@ -151,7 +154,7 @@ function App() {
     refetchInterval: 15000,
   })
 
-  const rawLibraries = librariesQuery.data ?? []
+  const rawLibraries = librariesQuery.data ?? emptyLibraries
   const rawActiveTasks = rawLibraries
     .map((library) => library.scan)
     .filter((scan) => isActiveScan(scan.status))
@@ -310,7 +313,7 @@ function App() {
     previousActiveCountRef.current = activeCount
   }, [activeTasks.length, queryClient])
 
-  const tracks = tracksQuery.data ?? []
+  const tracks = tracksQuery.data ?? emptyTracks
   const visibleTracks = useMemo(() => {
     return sortTracks(
       tracks.filter((track) => {
@@ -326,11 +329,11 @@ function App() {
     )
   }, [formatFilter, likedOnly, sortField, tracks])
   const availableFormats = useMemo(() => Array.from(new Set(tracks.map((track) => track.format))).sort(), [tracks])
-  const playlists = playlistsQuery.data ?? []
+  const playlists = playlistsQuery.data ?? emptyPlaylists
   const selectedPlaylist = playlists.find((playlist) => playlist.id === selectedPlaylistId) ?? null
-  const activePlaylistTracks = playlistTracksQuery.data ?? []
-  const likedTracks = likedTracksQuery.data ?? []
-  const recentTracks = recentTracksQuery.data ?? []
+  const activePlaylistTracks = playlistTracksQuery.data ?? emptyTracks
+  const likedTracks = likedTracksQuery.data ?? emptyTracks
+  const recentTracks = recentTracksQuery.data ?? emptyTracks
   const allKnownTracks = useMemo(() => {
     const byID = new Map<number, Track>()
     for (const track of [...tracks, ...activePlaylistTracks, ...likedTracks, ...recentTracks, ...queue]) {
@@ -359,7 +362,7 @@ function App() {
 
   useEffect(() => {
     const validIDs = new Set(allKnownTracks.keys())
-    setSelectedTrackIds((ids) => ids.filter((id) => validIDs.has(id)))
+    setSelectedTrackIds((ids) => retainKnownTrackIds(ids, validIDs))
   }, [allKnownTracks])
 
   useEffect(() => {
